@@ -94,6 +94,11 @@ services:
     environment:
       REDIS_HOST: cart-redis
       CATALOG_BASE_URL: http://product-catalog-service:8081
+      # Consumes OrderPlaced to remove ordered items. Deliberately no depends_on: the cart API works
+      # without the broker, and the listener connects (and catches up) whenever RabbitMQ is up.
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-ecommerce}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-ecommerce}
       JWT_JWK_SET_URI: http://user-service:8080/.well-known/jwks.json
       JWT_ISSUER: user-service
     ports:
