@@ -51,6 +51,20 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId>
         </dependency>
+        <!-- Issues service-to-service tokens (OAuth2 client_credentials only). Used as a library,
+             deliberately WITHOUT Boot's authorization-server auto-configuration, which would add its
+             own random signing key, a second JWKS endpoint and OIDC/login endpoints. See ADR 008. -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-oauth2-authorization-server</artifactId>
+        </dependency>
+        <!-- Required explicitly: the authorization server's POM excludes commons-logging from its
+             spring-core dependency, and Maven's nearest-wins resolution then drops commons-logging
+             (which Spring Framework 7 needs) from the whole classpath. Version managed by Boot. -->
+        <dependency>
+            <groupId>commons-logging</groupId>
+            <artifactId>commons-logging</artifactId>
+        </dependency>
         <!-- Boot 4: Flyway auto-config lives in its own starter -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -3,6 +3,9 @@ package io.github.joeyblanks.ecommerce.user.config;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
+import io.github.joeyblanks.ecommerce.user.security.ServiceTokens;
+import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -21,10 +24,14 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(HttpMethod.POST, "/api/users/register", "/api/users/login").permitAll()
+                        // Customer-facing endpoints refuse service tokens (403), even the public ones.
+                        .requestMatchers(HttpMethod.POST, "/api/users/register", "/api/users/login")
+                                .access(ServiceTokens.notAServiceToken())
+                        // Infrastructure, used by services too.
                         .requestMatchers(HttpMethod.GET, "/.well-known/jwks.json").permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
-                        .anyRequest().authenticated())
+                        .anyRequest().access(AuthorizationManagers.allOf(
+                                AuthenticatedAuthorizationManager.authenticated(), ServiceTokens.notAServiceToken())))
                 // Validates Bearer JWTs using the JwtDecoder bean; invalid/missing token -> 401.
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
         return http.build();
