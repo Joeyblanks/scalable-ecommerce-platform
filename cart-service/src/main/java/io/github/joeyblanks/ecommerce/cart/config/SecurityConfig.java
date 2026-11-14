@@ -1,6 +1,9 @@
 package io.github.joeyblanks.ecommerce.cart.config;
 
+import io.github.joeyblanks.ecommerce.cart.security.ServiceTokens;
 import java.time.Clock;
+import org.springframework.security.authorization.AuthenticatedAuthorizationManager;
+import org.springframework.security.authorization.AuthorizationManagers;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,9 +29,11 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health/**").permitAll()
-                        // Every cart endpoint needs a valid token. Any role may use its OWN cart: the
+                        // Every cart endpoint needs a valid USER token. Any role may use its OWN cart: the
                         // cart is chosen by the token's subject, never by anything in the request.
-                        .requestMatchers("/api/**").authenticated()
+                        // Service tokens are refused (403): carts are customer-facing (ADR 008).
+                        .requestMatchers("/api/**").access(AuthorizationManagers.allOf(
+                                AuthenticatedAuthorizationManager.authenticated(), ServiceTokens.notAServiceToken()))
                         .anyRequest().denyAll())
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
         return http.build();

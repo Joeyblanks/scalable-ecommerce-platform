@@ -242,6 +242,13 @@ curl -s -H "Authorization: Bearer $TOKEN" localhost:8082/api/cart
 
 Redis is not published to the host. To look inside it: `docker compose exec cart-redis redis-cli`.
 
+**After you place an order**, cart-service removes what you ordered when it receives the
+`OrderPlaced` event (usually within a second). It **subtracts** the ordered quantities rather than
+clearing the cart, so anything you added after ordering stays. A redelivered event is applied only
+once ([ADR 006 amendment](docs/decisions/006-cart-service-redis-and-price-snapshots.md)). The cart
+API keeps working if RabbitMQ is down; the cleanup catches up when it is back. Service tokens are
+refused (403) on every cart endpoint.
+
 ### Order Service API (port 8083)
 
 Places orders from the caller's cart and follows them through payment
@@ -280,8 +287,9 @@ examples) are in [`docs/events`](docs/events/README.md).
 
 To place an order locally, order-service needs its client secret: set
 `ORDER_SERVICE_CLIENT_SECRET` and the matching `ORDER_SERVICE_CLIENT_SECRET_HASH` in `.env` (see
-"Service tokens"). The RabbitMQ management UI is at http://localhost:15672. Payment and notification
-services come next; until then an order stays `PENDING` and is auto-cancelled after 30 minutes.
+"Service tokens"). The RabbitMQ management UI is at http://localhost:15672. Once an order is placed,
+cart-service removes the ordered items from your cart. Payment and notification services come next;
+until then an order stays `PENDING` and is auto-cancelled after 30 minutes.
 
 ## Status
 

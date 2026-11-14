@@ -11,6 +11,21 @@ spring:
       # Fail fast: a stuck Redis must turn into a clear 503, not a hanging request.
       connect-timeout: 1s
       timeout: 500ms
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:ecommerce}
+    password: ${RABBITMQ_PASSWORD:ecommerce}
+    listener:
+      simple:
+        # A failing OrderPlaced handler is retried with backoff, then dead-lettered (never looped forever).
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 4
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 10s
 
 app:
   cart:
@@ -18,6 +33,11 @@ app:
     max-lines: 50            # distinct products per cart
     max-quantity: 99         # per product line
     cas-max-attempts: 10     # retries when the same line is changed concurrently
+  events:
+    exchange: ecommerce.events
+    # How long an applied event id is remembered, to ignore redeliveries. Longer than any redelivery
+    # or dead-letter replay window (same reasoning as order-service, ADR 007).
+    processed-event-ttl: P30D
   catalog:
     base-url: ${CATALOG_BASE_URL:http://localhost:8081}
     connect-timeout: 1s

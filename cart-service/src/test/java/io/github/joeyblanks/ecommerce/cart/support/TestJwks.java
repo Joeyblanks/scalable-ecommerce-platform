@@ -68,6 +68,17 @@ public final class TestJwks implements AutoCloseable {
                 .getTokenValue();
     }
 
+    /** A service token as user-service's client_credentials grant issues it (ADR 008): no roles. */
+    public String serviceToken(String clientId, String audience, List<String> scopes) {
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+                .issuer(ISSUER).subject(clientId).claim("client_id", clientId).audience(List.of(audience))
+                .claim("scope", scopes).issuedAt(Instant.now()).expiresAt(Instant.now().plus(Duration.ofMinutes(5)))
+                .build();
+        return new NimbusJwtEncoder(new ImmutableJWKSet<>(new JWKSet(trustedKey)))
+                .encode(JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.RS256).build(), claims))
+                .getTokenValue();
+    }
+
     public static RSAKey generate(String kid) {
         try {
             return new RSAKeyGenerator(2048).keyID(kid).keyUse(KeyUse.SIGNATURE).algorithm(JWSAlgorithm.RS256).generate();

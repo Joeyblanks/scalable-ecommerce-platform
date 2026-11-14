@@ -141,3 +141,42 @@ Negative:
 
 Not done yet, by design: guest carts, merging carts on login, stock
 reservation, a catalog circuit breaker, price refresh action.
+
+## Amendment (2026-11-14): removing ordered items when an order is placed
+
+The cart is emptied by consuming `OrderPlaced` (ADR 007), not by
+order-service calling the cart.
+
+- **Subtract, don't clear.** For each ordered product, the ordered quantity is
+  subtracted from the cart line; a line that reaches zero (or that the
+  customer had already reduced below the ordered quantity) is removed. Items
+  added after the order was placed, including more of an ordered product,
+  stay in the cart.
+- **One atomic step for the whole order.** An order usually changes several
+  lines, and the event must be remembered as applied. If those were separate
+  writes, a crash in between followed by a redelivery would subtract twice. So
+  one Lua script:
+  1. returns at once if this `eventId` was already applied (the key
+     `cart:processed-event:<eventId>`, kept 30 days);
+  2. checks that every affected line is still exactly as it was read
+     (compare-and-set, as in section 4, but for several lines at once);
+  3. only then writes all the new lines and records the event id.
+
+  If the customer changed the cart in between, nothing is written and the
+  consumer reads again. New line values are computed in Java, so the stored
+  JSON keeps exactly one format. Lua only compares and swaps strings.
+- **Not customer activity.** Applying an order does not renew the cart's
+  inactivity timer.
+- A malformed event is dead-lettered at once; one that keeps failing is
+  retried, then dead-lettered.
+
+We checked that each protection matters, by switching it off and running the
+tests:
+- without the event-id check, three deliveries of one order left **4** of 10
+  books instead of 8;
+- without the compare step, adding 15 books while an order for 4 was being
+  applied ended at **19** instead of 21.
+
+Note for a future Redis Cluster: the script touches two keys (the cart and the
+processed-event key), which must then live in the same hash slot, for example
+via a `{userId}` hash tag in both key names.
