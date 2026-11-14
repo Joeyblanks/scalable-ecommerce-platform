@@ -1,0 +1,40 @@
+# Compiled output
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Maven
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+dependency-reduced-pom.xml
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+release.properties
+
+# Logs
+*.log
+hs_err_pid*
+
+# IDEs
+.idea/
+*.iml
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+.factorypath
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local environment / secrets
+.env
+*.env.local
+application-local.yml
+application-local.properties
