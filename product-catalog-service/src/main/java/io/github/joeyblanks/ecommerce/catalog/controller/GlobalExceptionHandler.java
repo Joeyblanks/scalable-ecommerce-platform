@@ -3,6 +3,8 @@ package io.github.joeyblanks.ecommerce.catalog.controller;
 import io.github.joeyblanks.ecommerce.catalog.service.ConflictException;
 import io.github.joeyblanks.ecommerce.catalog.service.InvalidRequestException;
 import io.github.joeyblanks.ecommerce.catalog.service.NotFoundException;
+import io.github.joeyblanks.ecommerce.catalog.reservation.InsufficientStockException;
+import io.github.joeyblanks.ecommerce.catalog.reservation.ReservationConflictException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -24,6 +26,23 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ConflictException.class)
     ProblemDetail conflict(ConflictException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(InsufficientStockException.class)
+    ProblemDetail insufficientStock(InsufficientStockException e) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+        problem.setProperty("shortages", e.shortages());
+        return problem;
+    }
+
+    @ExceptionHandler(ReservationConflictException.class)
+    ProblemDetail reservationConflict(ReservationConflictException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+    }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    ProblemDetail badArgument(IllegalArgumentException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage());
     }
 
     @ExceptionHandler(InvalidRequestException.class)

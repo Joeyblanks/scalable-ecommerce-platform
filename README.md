@@ -171,13 +171,30 @@ holds no secret.
 |--------|------|--------|-------------|
 | GET | `/api/products` | public | Paged list. Params: `page` (>= 0), `size` (1-100, default 20), `sort` (`name`, `price`, `sku`, `stockQuantity`, `createdAt`; e.g. `price,desc`), `categoryId`, `q` (name contains, case-insensitive) |
 | GET | `/api/products/{id}` | public | One product |
-| POST / PUT / DELETE | `/api/products[/{id}]` | ADMIN | Create (201), full update, delete (204). Body: `sku`, `name`, `description`, `price`, `stockQuantity`, `categoryId` |
+| POST / PUT / DELETE | `/api/products[/{id}]` | ADMIN | Create (201), full update, delete (204). Body: `sku`, `name`, `description`, `price`, `stockQuantity`, `categoryId`; **PUT also needs `version`** (see below) |
 | GET | `/api/categories`, `/api/categories/{id}` | public | Paged list (`sort`: `name`, `createdAt`) / one category |
 | POST / PUT / DELETE | `/api/categories[/{id}]` | ADMIN | Body: `name`, `description` |
 
 Lists are `{items, page, size, totalElements, totalPages}`. Errors are RFC 9457 problem JSON:
 400 validation (including a `categoryId` that does not exist), 404 unknown id, 409 duplicate SKU or
 category name, or deleting a category that still has products. SKUs are stored uppercase.
+
+**Updating a product needs the `version` you read.** Every product response has a `version`, which
+changes on every edit and every stock reservation. `PUT` must send it back: a missing version is 400,
+a stale one is 409 ("reload and apply your change again"). This stops an admin's edit, made from an
+old read, from overwriting stock that orders reserved in the meantime.
+
+**Internal stock reservations (service-to-service only).** These need a service token with scope
+`stock:reserve` and audience `product-catalog-service` ([ADR 008](docs/decisions/008-service-to-service-tokens.md)).
+User and ADMIN tokens get 403; service tokens get 403 on all the customer endpoints above.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/internal/stock/reservations` | `{reservationId, items:[{productId, quantity}]}`: reserves **all items or none**. Returns each item's current `unitPrice`, `sku` and `name`, read in the same transaction (the authoritative price). 201 when new; 200 when the same id is repeated with the same items (nothing more is taken); 409 with `shortages` (per product: `requested`, `available`, `reason`) when anything is short or missing; 409 when the id was already released or used for different items. |
+| POST | `/internal/stock/reservations/{id}/release` | Returns the stock exactly once; always 200. Releasing an id that was never reserved records it, so a reserve that arrives later with that id is refused. |
+
+Guarantees (tested against a real PostgreSQL): no overselling under concurrent orders, no deadlocks
+between orders listing the same products in different orders, and every repeat is harmless.
 
 Try it (after setting `BOOTSTRAP_ADMIN_*` in `.env`):
 

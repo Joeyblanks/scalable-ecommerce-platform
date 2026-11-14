@@ -38,4 +38,16 @@ class RoleMappingTest {
     void tokenWithoutRolesGetsNoAuthorities() {
         assertThat(authorities(tokenWith(null))).isEmpty();
     }
+
+    @Test
+    void mapsTheScopeOfServiceTokensToScopeAuthorities() {
+        Jwt service = Jwt.withTokenValue("t").header("alg", "RS256").subject("order-service")
+                .claim("client_id", "order-service").claim("scope", List.of("stock:reserve"))
+                .issuedAt(Instant.now()).expiresAt(Instant.now().plusSeconds(60)).build();
+
+        List<String> authorities = config.jwtAuthenticationConverter().convert(service).getAuthorities().stream()
+                .map(a -> a.getAuthority()).filter(a -> a.startsWith("ROLE_") || a.startsWith("SCOPE_")).toList();
+
+        assertThat(authorities).containsExactly("SCOPE_stock:reserve"); // and no ROLE_ at all
+    }
 }

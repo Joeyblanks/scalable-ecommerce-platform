@@ -16,6 +16,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -64,6 +65,15 @@ public class ProductService {
     @Transactional
     public ProductResponse update(UUID id, ProductRequest request) {
         Product product = find(id);
+        // The stock quantity in a PUT is absolute. Without this check an admin editing, say, the price
+        // could silently overwrite stock that orders reserved after the admin loaded the product.
+        if (request.version() == null) {
+            throw new InvalidRequestException("version is required when updating a product: send the version from your latest read");
+        }
+        if (request.version() != product.getVersion()) {
+            throw new ConflictException("The product was changed since you read it (your version " + request.version()
+                    + ", current " + product.getVersion() + "); reload it and apply your change again");
+        }
         String sku = normalizeSku(request.sku());
         if (products.existsBySkuAndIdNot(sku, id)) {
             throw skuTaken(sku);
@@ -74,6 +84,9 @@ public class ProductService {
             return ProductResponse.from(products.saveAndFlush(product));
         } catch (DataIntegrityViolationException e) {
             throw skuTaken(sku);
+        } catch (ObjectOptimisticLockingFailureException e) {
+            // changed between our read and our write (e.g. a reservation in that instant)
+            throw new ConflictException("The product was changed while saving; reload it and apply your change again");
         }
     }
 
