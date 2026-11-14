@@ -1,0 +1,26 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: product-catalog-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5434/catalogdb}
+    username: ${DB_USERNAME:catalog_service}
+    password: ${DB_PASSWORD:catalog_service}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate   # Flyway owns the schema; Hibernate only checks it matches
+
+app:
+  security:
+    # Tokens are verified against user-service's public keys; this service holds no secret.
+    jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8080/.well-known/jwks.json}
+    issuer: ${JWT_ISSUER:user-service}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
