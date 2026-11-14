@@ -16,5 +16,7 @@ public record ProductRequest(
         @Size(max = 5000) String description,
         @NotNull @DecimalMin("0.00") @Digits(integer = 10, fraction = 2) BigDecimal price,
         @NotNull @Min(0) Integer stockQuantity,
-        @NotNull UUID categoryId) {
+        @NotNull UUID categoryId,
+        // Required on update (PUT): the version you read. Ignored on create.
+        @Min(0) Long version) {
 }

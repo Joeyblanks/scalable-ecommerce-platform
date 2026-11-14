@@ -90,6 +90,18 @@ class CatalogApiIT {
         return JsonPath.read(body, "$.id");
     }
 
+    /** For updates: the same body plus the version the caller read. */
+    private static String productJson(String sku, String name, String price, int stock, String categoryId, long version) {
+        String body = productJson(sku, name, price, stock, categoryId);
+        return body.substring(0, body.length() - 1) + ",\"version\":" + version + "}";
+    }
+
+    private long versionOf(String productId) throws Exception {
+        String body = mvc.perform(get("/api/products/" + productId)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        return ((Number) JsonPath.read(body, "$.version")).longValue();
+    }
+
     private static String productJson(String sku, String name, String price, int stock, String categoryId) {
         return "{\"sku\":\"" + sku + "\",\"name\":\"" + name + "\",\"price\":" + price + ",\"stockQuantity\":" + stock
                 + ",\"categoryId\":\"" + categoryId + "\"}";
@@ -261,7 +273,7 @@ class CatalogApiIT {
         String id = createProductId("x1", "Thing", "10.00", 5, books);
 
         mvc.perform(put("/api/products/" + id).header("Authorization", admin()).contentType(JSON)
-                        .content(productJson("x1", "Thing v2", "12.50", 0, toys)))
+                        .content(productJson("x1", "Thing v2", "12.50", 0, toys, versionOf(id))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.name").value("Thing v2"))
                 .andExpect(jsonPath("$.stockQuantity").value(0))
@@ -283,7 +295,7 @@ class CatalogApiIT {
     void updatingUnknownProductIs404() throws Exception {
         String cat = createCategory("Books");
         mvc.perform(put("/api/products/" + java.util.UUID.randomUUID()).header("Authorization", admin()).contentType(JSON)
-                        .content(productJson("x", "n", "1", 1, cat)))
+                        .content(productJson("x", "n", "1", 1, cat, 0)))
                 .andExpect(status().isNotFound());
     }
 
@@ -297,11 +309,11 @@ class CatalogApiIT {
 
         createProduct("DUP-1", "Again", "1", 1, cat).andExpect(status().isConflict());
         mvc.perform(put("/api/products/" + other).header("Authorization", admin()).contentType(JSON)
-                        .content(productJson("dup-1", "Two", "1", 1, cat)))
+                        .content(productJson("dup-1", "Two", "1", 1, cat, versionOf(other))))
                 .andExpect(status().isConflict());
         // keeping its own SKU on update is fine
         mvc.perform(put("/api/products/" + other).header("Authorization", admin()).contentType(JSON)
-                        .content(productJson("dup-2", "Two renamed", "1", 1, cat)))
+                        .content(productJson("dup-2", "Two renamed", "1", 1, cat, versionOf(other))))
                 .andExpect(status().isOk());
         assertThat(products.count()).isEqualTo(2);
     }

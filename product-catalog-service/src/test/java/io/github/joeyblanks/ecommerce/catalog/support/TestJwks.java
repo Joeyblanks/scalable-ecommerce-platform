@@ -68,6 +68,37 @@ public final class TestJwks implements AutoCloseable {
                 .getTokenValue();
     }
 
+    /** A service token as user-service's client_credentials grant issues it (ADR 008). */
+    public String serviceToken(String clientId, String audience, List<String> scopes) {
+        return serviceToken(trustedKey, clientId, audience, scopes);
+    }
+
+    public String serviceToken(RSAKey key, String clientId, String audience, List<String> scopes) {
+        return signClaims(key, claims -> {
+            claims.subject(clientId).claim("client_id", clientId);
+            if (audience != null) {
+                claims.audience(List.of(audience));
+            }
+            if (scopes != null) {
+                claims.claim("scope", scopes);
+            }
+        });
+    }
+
+    /** Signs arbitrary claims (plus issuer and a valid lifetime) with the trusted key. */
+    public String signClaims(java.util.function.Consumer<JwtClaimsSet.Builder> customizer) {
+        return signClaims(trustedKey, customizer);
+    }
+
+    private String signClaims(RSAKey key, java.util.function.Consumer<JwtClaimsSet.Builder> customizer) {
+        JwtClaimsSet.Builder claims = JwtClaimsSet.builder()
+                .issuer(ISSUER).issuedAt(Instant.now()).expiresAt(Instant.now().plus(Duration.ofMinutes(5)));
+        customizer.accept(claims);
+        return new NimbusJwtEncoder(new ImmutableJWKSet<>(new JWKSet(key)))
+                .encode(JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.RS256).build(), claims.build()))
+                .getTokenValue();
+    }
+
     public static RSAKey generate(String kid) {
         try {
             return new RSAKeyGenerator(2048).keyID(kid).keyUse(KeyUse.SIGNATURE).algorithm(JWSAlgorithm.RS256).generate();

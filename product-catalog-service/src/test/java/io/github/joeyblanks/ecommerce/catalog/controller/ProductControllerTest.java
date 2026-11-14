@@ -46,7 +46,7 @@ class ProductControllerTest {
     @MockitoBean ProductService service;
 
     private static final UUID CATEGORY = UUID.randomUUID();
-    private static final String BODY = "{\"sku\":\"CC-1\",\"name\":\"Clean Code\",\"price\":29.90,\"stockQuantity\":5,\"categoryId\":\"" + CATEGORY + "\"}";
+    private static final String BODY = "{\"sku\":\"CC-1\",\"name\":\"Clean Code\",\"price\":29.90,\"stockQuantity\":5,\"categoryId\":\"" + CATEGORY + "\",\"version\":0}";
 
     private static RequestPostProcessor admin() {
         return jwt().authorities(new SimpleGrantedAuthority("ROLE_ADMIN"));
@@ -58,7 +58,7 @@ class ProductControllerTest {
 
     private static ProductResponse product(UUID id) {
         return new ProductResponse(id, "CC-1", "Clean Code", null, new BigDecimal("29.90"), 5, CATEGORY, "Books",
-                Instant.EPOCH, Instant.EPOCH);
+                Instant.EPOCH, Instant.EPOCH, 0);
     }
 
     // ---- public reads ----

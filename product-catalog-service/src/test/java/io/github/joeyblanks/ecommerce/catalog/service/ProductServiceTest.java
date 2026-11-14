@@ -45,7 +45,11 @@ class ProductServiceTest {
     }
 
     private ProductRequest request(String sku) {
-        return new ProductRequest(sku, "  Clean Code ", " A book ", new BigDecimal("29.9"), 5, books.getId());
+        return request(sku, 0L); // a freshly built Product has version 0
+    }
+
+    private ProductRequest request(String sku, Long version) {
+        return new ProductRequest(sku, "  Clean Code ", " A book ", new BigDecimal("29.9"), 5, books.getId(), version);
     }
 
     private Product existing() {
@@ -119,6 +123,27 @@ class ProductServiceTest {
 
         assertThatThrownBy(() -> service.update(p.getId(), request("taken"))).isInstanceOf(ConflictException.class);
         assertThatThrownBy(() -> service.update(missing, request("CC-1"))).isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void updateRequiresTheVersionThatWasRead() {
+        Product p = existing();
+        when(products.findById(p.getId())).thenReturn(Optional.of(p));
+
+        assertThatThrownBy(() -> service.update(p.getId(), request("CC-1", null)))
+                .isInstanceOf(InvalidRequestException.class).hasMessageContaining("version is required");
+        verify(products, never()).saveAndFlush(any());
+    }
+
+    @Test
+    void updateWithAStaleVersionIsAConflictAndChangesNothing() {
+        Product p = existing(); // version 0
+        when(products.findById(p.getId())).thenReturn(Optional.of(p));
+
+        assertThatThrownBy(() -> service.update(p.getId(), request("CC-1", 3L)))
+                .isInstanceOf(ConflictException.class).hasMessageContaining("changed since you read it");
+        verify(products, never()).saveAndFlush(any());
+        assertThat(p.getStockQuantity()).isEqualTo(3);
     }
 
     @Test

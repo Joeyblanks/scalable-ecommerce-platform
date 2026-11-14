@@ -7,11 +7,11 @@ import java.util.UUID;
 
 public record ProductResponse(UUID id, String sku, String name, String description, BigDecimal price,
                               int stockQuantity, UUID categoryId, String categoryName,
-                              Instant createdAt, Instant updatedAt) {
+                              Instant createdAt, Instant updatedAt, long version) {
 
     public static ProductResponse from(Product p) {
         return new ProductResponse(p.getId(), p.getSku(), p.getName(), p.getDescription(), p.getPrice(),
                 p.getStockQuantity(), p.getCategory().getId(), p.getCategory().getName(),
-                p.getCreatedAt(), p.getUpdatedAt());
+                p.getCreatedAt(), p.getUpdatedAt(), p.getVersion());
     }
 }
