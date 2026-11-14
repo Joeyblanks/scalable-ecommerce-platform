@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Joeyblanks/scalable-ecommerce-platform/docs/events/schemas/PaymentFailed.v1.json",
+  "title": "PaymentFailed v1",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "data"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "PaymentFailed"
+    },
+    "eventVersion": {
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "payment-service"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "paymentId",
+        "orderId",
+        "reason",
+        "failedAt"
+      ],
+      "properties": {
+        "paymentId": {
+          "type": "string"
+        },
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "failedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

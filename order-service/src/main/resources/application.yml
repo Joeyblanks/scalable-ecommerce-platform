@@ -1,0 +1,75 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: order-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5435/orderdb}
+    username: ${DB_USERNAME:order_service}
+    password: ${DB_PASSWORD:order_service}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:ecommerce}
+    password: ${RABBITMQ_PASSWORD:ecommerce}
+    # The outbox relay waits for the broker's confirm before marking an event published, and treats an
+    # unroutable message (mandatory + returns) as a failure, never as success.
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        # A failing payment-event handler is retried with backoff, then dead-lettered (never looped forever).
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 4
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 10s
+
+app:
+  security:
+    # Customer tokens are verified against user-service's public keys (ADR 004).
+    jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8080/.well-known/jwks.json}
+    issuer: ${JWT_ISSUER:user-service}
+  service-token:
+    # This service's own identity for calling the catalog's internal endpoints (ADR 008).
+    token-uri: ${SERVICE_TOKEN_URI:http://localhost:8080/oauth2/token}
+    client-id: order-service
+    client-secret: ${ORDER_SERVICE_CLIENT_SECRET:}
+    scope: stock:reserve
+    timeout: 2s
+  cart:
+    base-url: ${CART_BASE_URL:http://localhost:8082}
+    connect-timeout: 1s
+    read-timeout: 2s
+  catalog:
+    base-url: ${CATALOG_BASE_URL:http://localhost:8081}
+    connect-timeout: 1s
+    read-timeout: 3s
+  events:
+    exchange: ecommerce.events
+  orders:
+    payment-timeout: PT30M            # PENDING longer than this -> cancelled, stock released
+    stuck-reservation-after: PT2M      # RESERVING longer than this -> FAILED, stock released (crash recovery)
+  jobs:
+    outbox-relay-interval: 500ms
+    outbox-batch-size: 50
+    publish-confirm-timeout: 5s
+    stock-release-interval: 1s
+    reconcile-interval: 60s
+    payment-timeout-interval: 60s
+    cleanup-interval: 1h
+  retention:
+    published-outbox-events: P7D     # published events are only kept for troubleshooting
+    processed-events: P30D           # must outlive any redelivery or dead-letter replay (see ADR 007)
+    completed-stock-releases: P30D
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

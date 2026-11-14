@@ -1,0 +1,13 @@
+{
+  "eventId": "7d4b2e9c-1a6f-4c3e-b8d5-9e2a4c6f1b07",
+  "eventType": "PaymentSucceeded",
+  "eventVersion": 1,
+  "occurredAt": "2026-11-14T10:16:01.870Z",
+  "producer": "payment-service",
+  "data": {
+    "paymentId": "pay_7Hk2",
+    "orderId": "3f2b8c1e-5d4a-4b6f-9e21-7a0c6d9e1b42",
+    "amount": "59.80",
+    "succeededAt": "2026-11-14T10:16:01.870Z"
+  }
+}

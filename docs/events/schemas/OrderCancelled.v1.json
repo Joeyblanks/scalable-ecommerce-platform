@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Joeyblanks/scalable-ecommerce-platform/docs/events/schemas/OrderCancelled.v1.json",
+  "title": "OrderCancelled v1",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "data"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "OrderCancelled"
+    },
+    "eventVersion": {
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "order-service"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "orderId",
+        "userId",
+        "reason",
+        "cancelledAt"
+      ],
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "userId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "reason": {
+          "enum": [
+            "CUSTOMER_REQUEST",
+            "PAYMENT_FAILED",
+            "PAYMENT_TIMEOUT"
+          ]
+        },
+        "cancelledAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

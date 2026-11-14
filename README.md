@@ -33,6 +33,8 @@ root build. Each service is built, tested and deployed on its own.
 │   └── src/
 ├── product-catalog-service/   # Products and categories (same standalone layout)
 ├── cart-service/        # One shopping cart per user, stored in Redis (same standalone layout)
+├── order-service/       # Orders: saga, transactional outbox, payment events (same standalone layout)
+├── docs/events/         # Event contracts (envelope, topology, JSON schemas, examples)
 ├── docker-compose.yml   # local dev: databases + all services
 ├── .github/workflows/   # CI (see "Continuous integration")
 └── .env.example
@@ -49,6 +51,7 @@ matching entry in `docker-compose.yml`.
 - [004 - RS256 with JWKS instead of a shared HS256 secret](docs/decisions/004-rs256-jwks-and-roles.md)
 - [005 - CI with one GitHub Actions workflow](docs/decisions/005-ci-github-actions.md)
 - [006 - Cart service: Redis, price snapshots, compare-and-set](docs/decisions/006-cart-service-redis-and-price-snapshots.md)
+- [007 - Order saga with a transactional outbox](docs/decisions/007-order-saga-and-transactional-outbox.md)
 - [008 - Service-to-service tokens (OAuth2 client credentials)](docs/decisions/008-service-to-service-tokens.md)
 
 ## Getting started
@@ -239,6 +242,47 @@ curl -s -H "Authorization: Bearer $TOKEN" localhost:8082/api/cart
 
 Redis is not published to the host. To look inside it: `docker compose exec cart-redis redis-cli`.
 
+### Order Service API (port 8083)
+
+Places orders from the caller's cart and follows them through payment
+([ADR 007](docs/decisions/007-order-saga-and-transactional-outbox.md)). Every endpoint needs a
+customer token; service tokens get 403. Orders always belong to the token's subject, and another
+user's order is a 404.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/orders` | Places an order from your cart. **Requires an `Idempotency-Key` header** (1-100 of `A-Z a-z 0-9 - _`); repeating it returns the same order (200) instead of a second one. 201 with the order (`PENDING`) at the catalog's current prices; lines whose price differs from what the cart showed have `priceChanged: true`. |
+| GET | `/api/orders` | Your orders, newest first (`page`, `size` 1-50) |
+| GET | `/api/orders/{id}` | One of your orders |
+| POST | `/api/orders/{id}/cancel` | Cancels a `PENDING` order (409 otherwise); its stock is released |
+
+Errors: **400** empty cart, missing or invalid key; **409** some items are short (`shortages` lists
+each product with `requested` and `available`; nothing was ordered and your cart is unchanged), or
+the same key is still being processed; **503** with `Retry-After` when the cart, the catalog or
+user-service is unavailable (nothing was ordered), or when the order could not be confirmed (for
+example a storage error while saving). In every case, **retry with the same key**: if the order did
+go through you get it back (200), otherwise it is placed or fails cleanly.
+
+Order states: `PENDING` (stock reserved, waiting for payment), then `PAID` or `CANCELLED`
+(`CUSTOMER_REQUEST`, `PAYMENT_FAILED`, or `PAYMENT_TIMEOUT` after 30 minutes unpaid).
+
+How it stays correct when things fail (details and the full failure table are in ADR 007):
+
+- Events are written to a **transactional outbox** with the order change and published by a relay
+  that waits for RabbitMQ's confirm, so an order is never saved without its event or vice versa.
+- Payment events are handled **idempotently** (event id deduplication plus state-conditional
+  updates); poison messages go to a dead-letter queue.
+- Background jobs fail stuck attempts, cancel unpaid orders, retry stock releases, and clean up old
+  bookkeeping rows (published outbox events after 7 days, processed event ids after 30 days).
+
+Event contracts (envelope, routing keys, every event's fields, versioning rules, JSON Schemas and
+examples) are in [`docs/events`](docs/events/README.md).
+
+To place an order locally, order-service needs its client secret: set
+`ORDER_SERVICE_CLIENT_SECRET` and the matching `ORDER_SERVICE_CLIENT_SECRET_HASH` in `.env` (see
+"Service tokens"). The RabbitMQ management UI is at http://localhost:15672. Payment and notification
+services come next; until then an order stays `PENDING` and is auto-cancelled after 30 minutes.
+
 ## Status
 
-Early stage: User, Product Catalog and Cart service MVPs.
+Early stage: User, Product Catalog, Cart and Order service MVPs.

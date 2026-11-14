@@ -1,0 +1,13 @@
+{
+  "eventId": "5c2e9b1a-7d3f-4a6e-8b04-1f9c3e5a7d28",
+  "eventType": "OrderPaid",
+  "eventVersion": 1,
+  "occurredAt": "2026-11-14T10:16:02.004Z",
+  "producer": "order-service",
+  "data": {
+    "orderId": "3f2b8c1e-5d4a-4b6f-9e21-7a0c6d9e1b42",
+    "userId": "9a7e4c2d-1b3f-4e8a-a6d5-2c9f0e7b3a14",
+    "paymentId": "pay_7Hk2",
+    "paidAt": "2026-11-14T10:16:02.004Z"
+  }
+}
