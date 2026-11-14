@@ -1,0 +1,34 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: cart-service
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # Fail fast: a stuck Redis must turn into a clear 503, not a hanging request.
+      connect-timeout: 1s
+      timeout: 500ms
+
+app:
+  cart:
+    ttl: P7D                 # a cart is deleted after this much inactivity (renewed on every access)
+    max-lines: 50            # distinct products per cart
+    max-quantity: 99         # per product line
+    cas-max-attempts: 10     # retries when the same line is changed concurrently
+  catalog:
+    base-url: ${CATALOG_BASE_URL:http://localhost:8081}
+    connect-timeout: 1s
+    read-timeout: 2s
+  security:
+    # Tokens are verified against user-service's public keys; this service holds no secret.
+    jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8080/.well-known/jwks.json}
+    issuer: ${JWT_ISSUER:user-service}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
