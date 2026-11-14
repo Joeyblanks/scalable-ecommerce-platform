@@ -36,9 +36,15 @@ Prerequisites: JDK 21 and Docker with Compose. Maven is not required: use the bu
 
 ```bash
 cp .env.example .env          # then set JWT_SECRET (min 32 chars) and DB password
-./mvnw verify                 # build + run all tests
+./mvnw verify                 # build + unit tests + integration tests (needs Docker)
 docker compose up --build     # PostgreSQL + user-service on http://localhost:8080
 ```
+
+### Tests
+
+- Unit tests (`*Test`, Surefire) run in the `test` phase and need nothing external.
+- Integration tests (`*IT`, Failsafe) run in the `verify` phase against a real PostgreSQL
+  started by Testcontainers, so **Docker must be running**.
 
 ### User Service API
 
