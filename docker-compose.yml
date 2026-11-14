@@ -30,6 +30,8 @@ services:
       # Optional first admin, created at startup only (both or neither). No defaults.
       BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
+      # bcrypt hash of order-service's client secret; unset = that client is disabled.
+      ORDER_SERVICE_CLIENT_SECRET_HASH: ${ORDER_SERVICE_CLIENT_SECRET_HASH:-}
     ports:
       - "8080:8080"
 

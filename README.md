@@ -49,6 +49,7 @@ matching entry in `docker-compose.yml`.
 - [004 - RS256 with JWKS instead of a shared HS256 secret](docs/decisions/004-rs256-jwks-and-roles.md)
 - [005 - CI with one GitHub Actions workflow](docs/decisions/005-ci-github-actions.md)
 - [006 - Cart service: Redis, price snapshots, compare-and-set](docs/decisions/006-cart-service-redis-and-price-snapshots.md)
+- [008 - Service-to-service tokens (OAuth2 client credentials)](docs/decisions/008-service-to-service-tokens.md)
 
 ## Getting started
 
@@ -98,6 +99,36 @@ BOOTSTRAP_ADMIN_PASSWORD=<12-72 characters, strong and unique>
 
 The admin is created once at startup. There is no default password. If the email already
 belongs to an account, that account is left unchanged. You can remove the variables afterwards.
+
+### Service tokens (service-to-service calls)
+
+Services authenticate to each other with short-lived (5 minute) tokens from user-service, using the
+OAuth2 **client credentials** grant ([ADR 008](docs/decisions/008-service-to-service-tokens.md)).
+They come from the same issuer and are signed with the same key as customer tokens, so every
+service verifies them with the existing JWKS; no other issuer or JWKS exists.
+
+```bash
+curl -s -u order-service:<client secret> -d grant_type=client_credentials -d scope=stock:reserve \
+  localhost:8080/oauth2/token
+# {"access_token":"...","scope":"stock:reserve","token_type":"Bearer","expires_in":299}
+```
+
+- A service token carries `client_id`, `scope` and `aud`, and never `roles`. Customer tokens never
+  carry `client_id` or `scope`.
+- **Request the scopes you need explicitly.** A token requested without `scope` has none and is
+  accepted nowhere.
+- Customer-facing endpoints refuse service tokens (403); internal endpoints refuse user and ADMIN
+  tokens (403).
+- Clients are configured in `user-service/src/main/resources/application.yml`. user-service stores
+  only a **bcrypt hash** of each secret (startup fails if a plain secret is put there). Generate one:
+
+  ```bash
+  docker run --rm httpd:2.4-alpine htpasswd -nbBC 12 "" '<the secret>' | tr -d ':\n'
+  ```
+
+  Put it in `.env` as `ORDER_SERVICE_CLIENT_SECRET_HASH`. The plain secret goes only to the calling
+  service (order-service, once it exists). In local dev both happen to live in the same `.env`; in a
+  real deployment they belong in each service's own secret store.
 
 ### Tests
 

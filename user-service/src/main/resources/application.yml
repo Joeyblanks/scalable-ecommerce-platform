@@ -22,6 +22,16 @@ app:
     email: ${BOOTSTRAP_ADMIN_EMAIL:}
     password: ${BOOTSTRAP_ADMIN_PASSWORD:}
 
+  service-tokens:
+    # OAuth2 client_credentials tokens for service-to-service calls. See README "Service tokens".
+    ttl: PT5M
+    clients:
+      # Enabled only when its bcrypt secret hash is provided. Never put the plain secret here.
+      - client-id: order-service
+        secret-hash: ${ORDER_SERVICE_CLIENT_SECRET_HASH:}
+        scopes: [stock:reserve]
+        audience: product-catalog-service
+
 management:
   endpoints:
     web:
