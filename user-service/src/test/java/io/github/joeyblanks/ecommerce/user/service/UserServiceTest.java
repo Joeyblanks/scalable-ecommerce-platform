@@ -11,6 +11,7 @@ import io.github.joeyblanks.ecommerce.user.dto.LoginRequest;
 import io.github.joeyblanks.ecommerce.user.dto.ProfileResponse;
 import io.github.joeyblanks.ecommerce.user.dto.RegisterRequest;
 import io.github.joeyblanks.ecommerce.user.dto.TokenResponse;
+import io.github.joeyblanks.ecommerce.user.model.Role;
 import io.github.joeyblanks.ecommerce.user.model.User;
 import io.github.joeyblanks.ecommerce.user.repository.UserRepository;
 import io.github.joeyblanks.ecommerce.user.security.JwtService;
@@ -45,7 +46,7 @@ class UserServiceTest {
     }
 
     private User existingUser(String password) {
-        return new User(UUID.randomUUID(), "ann@example.com", encoder.encode(password), "Ann", clock.instant());
+        return new User(UUID.randomUUID(), "ann@example.com", encoder.encode(password), "Ann", Role.CUSTOMER, clock.instant());
     }
 
     @Test
@@ -62,6 +63,8 @@ class UserServiceTest {
         assertThat(encoder.matches("password123", saved.getValue().getPasswordHash())).isTrue();
         assertThat(profile.email()).isEqualTo("ann@example.com");
         assertThat(profile.fullName()).isEqualTo("Ann");
+        assertThat(saved.getValue().getRole()).isEqualTo(Role.CUSTOMER);
+        assertThat(profile.role()).isEqualTo(Role.CUSTOMER);
         assertThat(profile.createdAt()).isEqualTo(clock.instant());
     }
 
@@ -124,5 +127,26 @@ class UserServiceTest {
         when(users.findById(id)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.getProfile(id)).isInstanceOf(UserNotFoundException.class);
+    }
+
+    @Test
+    void createAdminIfAbsentCreatesHashedAdmin() {
+        when(users.existsByEmail("root@example.com")).thenReturn(false);
+
+        assertThat(service.createAdminIfAbsent(" Root@Example.com ", "a-long-admin-password", "Administrator")).isTrue();
+
+        ArgumentCaptor<User> saved = ArgumentCaptor.forClass(User.class);
+        verify(users).saveAndFlush(saved.capture());
+        assertThat(saved.getValue().getRole()).isEqualTo(Role.ADMIN);
+        assertThat(saved.getValue().getEmail()).isEqualTo("root@example.com");
+        assertThat(encoder.matches("a-long-admin-password", saved.getValue().getPasswordHash())).isTrue();
+    }
+
+    @Test
+    void createAdminIfAbsentLeavesExistingAccountUntouched() {
+        when(users.existsByEmail("root@example.com")).thenReturn(true);
+
+        assertThat(service.createAdminIfAbsent("root@example.com", "a-long-admin-password", "Administrator")).isFalse();
+        verify(users, never()).saveAndFlush(any());
     }
 }

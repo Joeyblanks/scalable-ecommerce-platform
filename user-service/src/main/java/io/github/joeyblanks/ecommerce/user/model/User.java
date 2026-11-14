@@ -2,6 +2,8 @@ package io.github.joeyblanks.ecommerce.user.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -23,6 +25,10 @@ public class User {
     @Column(name = "full_name", nullable = false)
     private String fullName;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Role role;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -30,11 +36,12 @@ public class User {
         // for JPA
     }
 
-    public User(UUID id, String email, String passwordHash, String fullName, Instant createdAt) {
+    public User(UUID id, String email, String passwordHash, String fullName, Role role, Instant createdAt) {
         this.id = id;
         this.email = email;
         this.passwordHash = passwordHash;
         this.fullName = fullName;
+        this.role = role;
         this.createdAt = createdAt;
     }
 
@@ -42,5 +49,6 @@ public class User {
     public String getEmail() { return email; }
     public String getPasswordHash() { return passwordHash; }
     public String getFullName() { return fullName; }
+    public Role getRole() { return role; }
     public Instant getCreatedAt() { return createdAt; }
 }

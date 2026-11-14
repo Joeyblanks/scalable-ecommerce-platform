@@ -38,3 +38,7 @@ Thumbs.db
 *.env.local
 application-local.yml
 application-local.properties
+
+# Key material must never be committed
+*.pem
+*.key
