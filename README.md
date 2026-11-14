@@ -7,7 +7,7 @@ An e-commerce platform built as a set of Java 21 / Spring Boot microservices in 
 | Concern        | Choice                                  |
 |----------------|-----------------------------------------|
 | Language       | Java 21                                 |
-| Framework      | Spring Boot                             |
+| Framework      | Spring Boot 4.1 (Spring Security 7, Jackson 3) |
 | Build          | Maven (multi-module)                    |
 | Database       | PostgreSQL, one database per service    |
 | Messaging      | RabbitMQ (domain events between services) |
@@ -18,7 +18,10 @@ An e-commerce platform built as a set of Java 21 / Spring Boot microservices in 
 ```
 .
 ├── docs/decisions/   # Architecture Decision Records (ADRs)
-└── services/         # One Maven module per microservice (added as built)
+├── services/         # One Maven module per microservice
+│   └── user-service/ # Registration, login (JWT), profile
+├── docker-compose.yml
+└── pom.xml           # Parent POM (Spring Boot 4.1.x, Java 21)
 ```
 
 ## Architecture decisions
@@ -30,9 +33,27 @@ An e-commerce platform built as a set of Java 21 / Spring Boot microservices in 
 
 Prerequisites: JDK 21, Maven 3.9+, Docker with Compose.
 
-Build and run instructions will be added with the first service
-(see the "Project skeleton and User Service MVP" issue).
+```bash
+cp .env.example .env          # then set JWT_SECRET (min 32 chars) and DB password
+mvn verify                    # build + run all tests
+docker compose up --build     # PostgreSQL + user-service on http://localhost:8080
+```
+
+### User Service API
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| POST | `/api/users/register` | none | `{email, password, fullName}` -> 201 profile (409 if email taken) |
+| POST | `/api/users/login` | none | `{email, password}` -> `{accessToken, tokenType, expiresIn}` |
+| GET | `/api/users/me` | Bearer JWT | Current user's profile |
+| GET | `/actuator/health` | none | Health check |
+
+```bash
+curl -H 'Content-Type: application/json' -d '{"email":"ann@example.com","password":"password123","fullName":"Ann"}' localhost:8080/api/users/register
+TOKEN=$(curl -s -H 'Content-Type: application/json' -d '{"email":"ann@example.com","password":"password123"}' localhost:8080/api/users/login | jq -r .accessToken)
+curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/users/me
+```
 
 ## Status
 
-Early stage: project skeleton and first service in progress.
+Early stage: project skeleton and User Service MVP.

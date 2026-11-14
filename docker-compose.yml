@@ -1,0 +1,34 @@
+services:
+  user-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: userdb
+      POSTGRES_USER: ${USER_DB_USERNAME:-user_service}
+      POSTGRES_PASSWORD: ${USER_DB_PASSWORD:-user_service}
+    ports:
+      - "5432:5432"
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d userdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    depends_on:
+      user-db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://user-db:5432/userdb
+      DB_USERNAME: ${USER_DB_USERNAME:-user_service}
+      DB_PASSWORD: ${USER_DB_PASSWORD:-user_service}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (min 32 chars) in .env - see .env.example}
+    ports:
+      - "8080:8080"
+
+volumes:
+  user-db-data:
