@@ -25,7 +25,11 @@ services:
       DB_URL: jdbc:postgresql://user-db:5432/userdb
       DB_USERNAME: ${USER_DB_USERNAME:-user_service}
       DB_PASSWORD: ${USER_DB_PASSWORD:-user_service}
-      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET (min 32 chars) in .env - see .env.example}
+      # RS256 signing key: never committed, must stay the same across restarts. See README.
+      JWT_PRIVATE_KEY: ${JWT_PRIVATE_KEY:?Set JWT_PRIVATE_KEY in .env - see README "Signing key"}
+      # Optional first admin, created at startup only (both or neither). No defaults.
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
     ports:
       - "8080:8080"
 

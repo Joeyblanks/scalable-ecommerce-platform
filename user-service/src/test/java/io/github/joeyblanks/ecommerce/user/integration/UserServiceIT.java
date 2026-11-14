@@ -7,7 +7,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import io.github.joeyblanks.ecommerce.user.config.AdminBootstrapRunner;
+import io.github.joeyblanks.ecommerce.user.config.BootstrapAdminProperties;
+import io.github.joeyblanks.ecommerce.user.model.Role;
 import io.github.joeyblanks.ecommerce.user.model.User;
+import io.github.joeyblanks.ecommerce.user.service.UserService;
+import io.github.joeyblanks.ecommerce.user.support.TestKeys;
+import com.nimbusds.jose.jwk.JWKSet;
+import java.util.List;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import io.github.joeyblanks.ecommerce.user.repository.UserRepository;
 import java.time.Duration;
 import java.time.Instant;
@@ -20,11 +29,13 @@ import org.springframework.boot.testcontainers.service.connection.ServiceConnect
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
+import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.JwsHeader;
 import org.springframework.security.oauth2.jwt.JwtClaimsSet;
 import org.springframework.security.oauth2.jwt.JwtEncoder;
 import org.springframework.security.oauth2.jwt.JwtEncoderParameters;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.testcontainers.junit.jupiter.Container;
@@ -38,9 +49,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 @SpringBootTest
 @AutoConfigureMockMvc
 @Testcontainers
-@TestPropertySource(properties = {
-        "app.jwt.secret=integration-secret-integration-secret-123",
-        "app.jwt.expiration=PT1H"})
+@TestPropertySource(properties = {"app.jwt.issuer=user-service", "app.jwt.expiration=PT1H"})
 class UserServiceIT {
 
     // Same major version as docker-compose.yml. @ServiceConnection wires the datasource automatically.
@@ -49,7 +58,13 @@ class UserServiceIT {
     @ServiceConnection
     static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:17");
 
+    @DynamicPropertySource
+    static void signingKey(DynamicPropertyRegistry registry) {
+        registry.add("app.jwt.private-key", TestKeys::sharedBase64Pem);
+    }
+
     @Autowired MockMvc mvc;
+    @Autowired UserService userService;
     @Autowired UserRepository users;
     @Autowired JdbcTemplate jdbc;
     @Autowired JwtEncoder jwtEncoder;
@@ -190,10 +205,87 @@ class UserServiceIT {
                 .andExpect(status().isNotFound());
     }
 
+    // ---- RS256, JWKS and roles ----
+
+    @Test
+    void loginTokenVerifiesAgainstPublishedJwksOnly() throws Exception {
+        register(ANN);
+        String token = loginToken("ann@example.com", "password123");
+
+        // Act as another service: fetch the public JWKS over HTTP and verify with it alone.
+        String jwksJson = mvc.perform(get("/.well-known/jwks.json"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(jwksJson).doesNotContain("\"d\"");
+        JWKSet jwks = JWKSet.parse(jwksJson);
+        var publicKey = ((com.nimbusds.jose.jwk.RSAKey) jwks.getKeys().get(0)).toRSAPublicKey();
+        Jwt jwt = NimbusJwtDecoder.withPublicKey(publicKey).build().decode(token);
+
+        assertThat(jwt.getHeaders()).containsEntry("alg", "RS256").containsEntry("kid", jwks.getKeys().get(0).getKeyID());
+        assertThat(jwt.<List<String>>getClaim("roles")).containsExactly("CUSTOMER");
+    }
+
+    @Test
+    void registrationCannotCreateAnAdminEvenIfRoleIsSupplied() throws Exception {
+        mvc.perform(post("/api/users/register").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"evil@example.com\",\"password\":\"password123\",\"fullName\":\"Evil\",\"role\":\"ADMIN\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.role").value("CUSTOMER"));
+
+        assertThat(users.findByEmail("evil@example.com").orElseThrow().getRole()).isEqualTo(Role.CUSTOMER);
+    }
+
+    @Test
+    void meReturnsRole() throws Exception {
+        register(ANN);
+        String token = loginToken("ann@example.com", "password123");
+
+        mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.role").value("CUSTOMER"));
+    }
+
+    @Test
+    void bootstrapCreatesAdminOnceAndAdminTokenCarriesAdminRole() throws Exception {
+        AdminBootstrapRunner runner = new AdminBootstrapRunner(
+                new BootstrapAdminProperties("root@example.com", "a-long-admin-password"), userService);
+
+        runner.run(null);
+        runner.run(null); // idempotent: must not fail or duplicate
+
+        assertThat(users.count()).isEqualTo(1);
+        assertThat(users.findByEmail("root@example.com").orElseThrow().getRole()).isEqualTo(Role.ADMIN);
+
+        String token = loginToken("root@example.com", "a-long-admin-password");
+        mvc.perform(get("/api/users/me").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.role").value("ADMIN"));
+        Jwt jwt = NimbusJwtDecoder.withPublicKey(
+                ((com.nimbusds.jose.jwk.RSAKey) JWKSet.parse(mvc.perform(get("/.well-known/jwks.json")).andReturn()
+                        .getResponse().getContentAsString()).getKeys().get(0)).toRSAPublicKey()).build().decode(token);
+        assertThat(jwt.<List<String>>getClaim("roles")).containsExactly("ADMIN");
+    }
+
+    @Test
+    void bootstrapNeverPromotesOrChangesAnExistingAccount() throws Exception {
+        register(ANN); // ann@example.com as CUSTOMER
+
+        new AdminBootstrapRunner(new BootstrapAdminProperties("ann@example.com", "a-long-admin-password"), userService)
+                .run(null);
+
+        assertThat(users.findByEmail("ann@example.com").orElseThrow().getRole()).isEqualTo(Role.CUSTOMER);
+        loginToken("ann@example.com", "password123"); // original password still works
+    }
+
+    @Test
+    void roleColumnRejectsUnknownValues() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> jdbc.update(
+                "insert into users(id,email,password_hash,full_name,role) values (gen_random_uuid(),'x@y.z','h','n','SUPERUSER')"))
+                .isInstanceOf(Exception.class);
+    }
+
     private String signedToken(UUID subject, Instant issuedAt, Instant expiresAt) {
         JwtClaimsSet claims = JwtClaimsSet.builder()
                 .subject(subject.toString()).issuedAt(issuedAt).expiresAt(expiresAt).build();
-        return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).build(), claims))
+        return jwtEncoder.encode(JwtEncoderParameters.from(JwsHeader.with(SignatureAlgorithm.RS256).build(), claims))
                 .getTokenValue();
     }
 }

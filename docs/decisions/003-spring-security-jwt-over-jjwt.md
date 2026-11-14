@@ -1,6 +1,6 @@
 # 003. Spring Security's built-in JWT support instead of jjwt
 
-- Status: Accepted
+- Status: Accepted (the HS256 signing choice was superseded by [004](004-rs256-jwks-and-roles.md); the library choice stands)
 - Date: 2026-11-14
 
 ## Context

@@ -12,9 +12,15 @@ spring:
 
 app:
   jwt:
-    # Must be at least 32 characters (HS256). No default on purpose: set JWT_SECRET.
-    secret: ${JWT_SECRET}
+    # RS256 signing key (PKCS#8 PEM). Never committed: set exactly one of these two.
+    private-key: ${JWT_PRIVATE_KEY:}             # base64-encoded (or raw) PEM text
+    private-key-file: ${JWT_PRIVATE_KEY_FILE:}   # path to a mounted PEM file
+    issuer: ${JWT_ISSUER:user-service}
     expiration: PT1H
+  bootstrap-admin:
+    # Optional first admin, created at startup only. No default: both must be set together.
+    email: ${BOOTSTRAP_ADMIN_EMAIL:}
+    password: ${BOOTSTRAP_ADMIN_PASSWORD:}
 
 management:
   endpoints:
