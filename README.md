@@ -1,5 +1,9 @@
 # Scalable E-commerce Platform
 
+[![CI](https://github.com/Joeyblanks/scalable-ecommerce-platform/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Joeyblanks/scalable-ecommerce-platform/actions/workflows/ci.yml?query=branch%3Amain)
+![Java 21](https://img.shields.io/badge/Java-21-orange)
+![Spring Boot 4.1](https://img.shields.io/badge/Spring%20Boot-4.1-6db33f)
+
 An e-commerce platform built as a set of Java 21 / Spring Boot microservices in a single repository.
 
 ## Tech stack
@@ -29,6 +33,7 @@ root build. Each service is built, tested and deployed on its own.
 │   └── src/
 ├── product-catalog-service/   # Products and categories (same standalone layout)
 ├── docker-compose.yml   # local dev: databases + all services
+├── .github/workflows/   # CI (see "Continuous integration")
 └── .env.example
 ```
 
@@ -41,6 +46,7 @@ matching entry in `docker-compose.yml`.
 - [002 - RabbitMQ over Kafka](docs/decisions/002-rabbitmq-over-kafka.md)
 - [003 - Spring Security JWT instead of jjwt](docs/decisions/003-spring-security-jwt-over-jjwt.md)
 - [004 - RS256 with JWKS instead of a shared HS256 secret](docs/decisions/004-rs256-jwks-and-roles.md)
+- [005 - CI with one GitHub Actions workflow](docs/decisions/005-ci-github-actions.md)
 
 ## Getting started
 
@@ -96,6 +102,15 @@ belongs to an account, that account is left unchanged. You can remove the variab
 - Unit tests (`*Test`, Surefire) run in the `test` phase and need nothing external.
 - Integration tests (`*IT`, Failsafe) run in the `verify` phase against a real PostgreSQL
   started by Testcontainers, so **Docker must be running**.
+
+### Continuous integration
+
+One GitHub Actions workflow (`.github/workflows/ci.yml`) runs on pull requests and on pushes to
+`main`. It detects which services a change touches and, for each one, runs `./mvnw verify`
+(unit tests and Testcontainers integration tests) and builds the Docker image (nothing is pushed).
+Changes that touch no service, such as docs, build nothing; changes under `.github/` build every
+service. Maven dependencies are cached. The `CI result` job is the single check to require in
+branch protection. Details and trade-offs: [ADR 005](docs/decisions/005-ci-github-actions.md).
 
 ### User Service API
 
