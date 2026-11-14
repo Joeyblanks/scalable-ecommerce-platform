@@ -28,14 +28,15 @@ An e-commerce platform built as a set of Java 21 / Spring Boot microservices in 
 
 - [001 - Single repository](docs/decisions/001-single-repository.md)
 - [002 - RabbitMQ over Kafka](docs/decisions/002-rabbitmq-over-kafka.md)
+- [003 - Spring Security JWT instead of jjwt](docs/decisions/003-spring-security-jwt-over-jjwt.md)
 
 ## Getting started
 
-Prerequisites: JDK 21, Maven 3.9+, Docker with Compose.
+Prerequisites: JDK 21 and Docker with Compose. Maven is not required: use the bundled wrapper (`./mvnw`).
 
 ```bash
 cp .env.example .env          # then set JWT_SECRET (min 32 chars) and DB password
-mvn verify                    # build + run all tests
+./mvnw verify                 # build + run all tests
 docker compose up --build     # PostgreSQL + user-service on http://localhost:8080
 ```
 
