@@ -99,7 +99,68 @@ services:
     ports:
       - "8082:8082"
 
+  # Domain events (ADR 002, 007). AMQP stays internal; only the management UI is published.
+  rabbitmq:
+    image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USERNAME:-ecommerce}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-ecommerce}
+    ports:
+      - "${RABBITMQ_UI_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  order-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: orderdb
+      POSTGRES_USER: ${ORDER_DB_USERNAME:-order_service}
+      POSTGRES_PASSWORD: ${ORDER_DB_PASSWORD:-order_service}
+    ports:
+      - "${ORDER_DB_PORT:-5435}:5432"
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d orderdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  order-service:
+    build:
+      context: ./order-service
+    # Needs its database and the broker to start. user-service, cart and catalog are called lazily;
+    # if they are down, placing an order fails cleanly (503) and nothing is left half-done.
+    depends_on:
+      order-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://order-db:5432/orderdb
+      DB_USERNAME: ${ORDER_DB_USERNAME:-order_service}
+      DB_PASSWORD: ${ORDER_DB_PASSWORD:-order_service}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-ecommerce}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-ecommerce}
+      JWT_JWK_SET_URI: http://user-service:8080/.well-known/jwks.json
+      JWT_ISSUER: user-service
+      SERVICE_TOKEN_URI: http://user-service:8080/oauth2/token
+      # Plain client secret (user-service only holds its bcrypt hash). See README "Service tokens".
+      ORDER_SERVICE_CLIENT_SECRET: ${ORDER_SERVICE_CLIENT_SECRET:-}
+      CART_BASE_URL: http://cart-service:8082
+      CATALOG_BASE_URL: http://product-catalog-service:8081
+    ports:
+      - "8083:8083"
+
 volumes:
   user-db-data:
   catalog-db-data:
   cart-redis-data:
+  rabbitmq-data:
+  order-db-data:

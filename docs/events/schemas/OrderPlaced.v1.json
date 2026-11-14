@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/Joeyblanks/scalable-ecommerce-platform/docs/events/schemas/OrderPlaced.v1.json",
+  "title": "OrderPlaced v1",
+  "type": "object",
+  "required": [
+    "eventId",
+    "eventType",
+    "eventVersion",
+    "occurredAt",
+    "producer",
+    "data"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "eventType": {
+      "const": "OrderPlaced"
+    },
+    "eventVersion": {
+      "const": 1
+    },
+    "occurredAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "producer": {
+      "const": "order-service"
+    },
+    "data": {
+      "type": "object",
+      "required": [
+        "orderId",
+        "userId",
+        "items",
+        "totalAmount",
+        "placedAt"
+      ],
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "userId": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "items": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "productId",
+              "sku",
+              "name",
+              "unitPrice",
+              "quantity",
+              "lineTotal"
+            ],
+            "properties": {
+              "productId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "sku": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "unitPrice": {
+                "type": "string",
+                "pattern": "^-?[0-9]+\\.[0-9]{2}$",
+                "description": "decimal string with 2 places"
+              },
+              "quantity": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "lineTotal": {
+                "type": "string",
+                "pattern": "^-?[0-9]+\\.[0-9]{2}$",
+                "description": "decimal string with 2 places"
+              }
+            }
+          }
+        },
+        "totalAmount": {
+          "type": "string",
+          "pattern": "^-?[0-9]+\\.[0-9]{2}$",
+          "description": "decimal string with 2 places"
+        },
+        "placedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

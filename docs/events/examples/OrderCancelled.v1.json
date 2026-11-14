@@ -1,0 +1,13 @@
+{
+  "eventId": "e8a1c4f2-3b7d-4e5a-9c06-2b8f1d4e7a39",
+  "eventType": "OrderCancelled",
+  "eventVersion": 1,
+  "occurredAt": "2026-11-14T10:45:31.500Z",
+  "producer": "order-service",
+  "data": {
+    "orderId": "3f2b8c1e-5d4a-4b6f-9e21-7a0c6d9e1b42",
+    "userId": "9a7e4c2d-1b3f-4e8a-a6d5-2c9f0e7b3a14",
+    "reason": "PAYMENT_TIMEOUT",
+    "cancelledAt": "2026-11-14T10:45:31.500Z"
+  }
+}
