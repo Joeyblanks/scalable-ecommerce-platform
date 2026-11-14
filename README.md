@@ -259,7 +259,9 @@ user's order is a 404.
 Errors: **400** empty cart, missing or invalid key; **409** some items are short (`shortages` lists
 each product with `requested` and `available`; nothing was ordered and your cart is unchanged), or
 the same key is still being processed; **503** with `Retry-After` when the cart, the catalog or
-user-service is unavailable (nothing was ordered; retry with the same key).
+user-service is unavailable (nothing was ordered), or when the order could not be confirmed (for
+example a storage error while saving). In every case, **retry with the same key**: if the order did
+go through you get it back (200), otherwise it is placed or fails cleanly.
 
 Order states: `PENDING` (stock reserved, waiting for payment), then `PAID` or `CANCELLED`
 (`CUSTOMER_REQUEST`, `PAYMENT_FAILED`, or `PAYMENT_TIMEOUT` after 30 minutes unpaid).

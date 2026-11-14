@@ -68,14 +68,32 @@ public class OrderTransactions {
         return Optional.of(order);
     }
 
-    /** RESERVING -> FAILED (frees the idempotency key); optionally queue a stock release in the same TX. */
+    /**
+     * RESERVING -> FAILED (frees the idempotency key) and, if asked, queues the stock release, in one
+     * transaction. Both happen ONLY if this call actually moved the attempt out of RESERVING.
+     *
+     * <p>If the order is no longer RESERVING it must be left completely alone: either TX2 already made
+     * it PENDING (a live order whose reserved stock must not be released), or someone else already
+     * failed it and queued its release. This matters in two real situations:
+     * <ul>
+     *   <li>the reconciler read the attempt as RESERVING, then the slow request committed TX2, then the
+     *       reconciler calls this;</li>
+     *   <li>TX2 committed but the caller saw an exception (an ambiguous commit, e.g. the connection
+     *       dropped while the commit was being acknowledged), so the request path calls this.</li>
+     * </ul>
+     *
+     * @return true if the attempt was failed by this call; false if it was not RESERVING (nothing changed)
+     */
     @Transactional
-    public void failAttempt(UUID orderId, String reason, boolean releaseStock) {
+    public boolean failAttempt(UUID orderId, String reason, boolean releaseStock) {
         Instant now = clock.instant();
-        orders.markFailed(orderId, reason, now);
-        if (releaseStock) {
-            releases.enqueue(orderId, now); // idempotent; harmless if the reconciler already queued it
+        if (orders.markFailed(orderId, reason, now) == 0) {
+            return false; // not RESERVING any more: not ours to fail, and never ours to release
         }
+        if (releaseStock) {
+            releases.enqueue(orderId, now);
+        }
+        return true;
     }
 
     /**

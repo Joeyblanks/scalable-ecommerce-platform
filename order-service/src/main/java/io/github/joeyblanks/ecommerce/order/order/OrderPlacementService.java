@@ -24,7 +24,10 @@ import org.springframework.stereotype.Service;
  *   <li>TX2: RESERVING -> PENDING + OrderPlaced in the outbox</li>
  * </ol>
  * Any failure after TX1 ends in FAILED, with the stock release queued whenever the catalog MIGHT
- * have reserved. The cart is emptied later by cart-service when it receives OrderPlaced.
+ * have reserved, but only if the attempt is still RESERVING at that moment: an attempt that TX2
+ * already made PENDING is a real order and is never failed or released (see
+ * {@link OrderTransactions#failAttempt}). The cart is emptied later by cart-service when it receives
+ * OrderPlaced.
  */
 @Service
 public class OrderPlacementService {
@@ -86,8 +89,12 @@ public class OrderPlacementService {
                     .map(order -> new Placement(true, order))
                     .orElseThrow(() -> new OrderNotCompletedException(null)); // the reconciler took over
         } catch (DataAccessException e) {
-            // Stock is reserved but the order could not be saved. Record the failure if we can; if the
-            // database is down, the reconciler finds the RESERVING row later and releases the stock.
+            // We do NOT know whether TX2 committed: the error may have come after the commit (an
+            // ambiguous commit). safeFail only acts if the attempt is still RESERVING, so:
+            //  - TX2 really failed  -> FAILED, stock release queued;
+            //  - TX2 did commit     -> the order is PENDING and is left alone (no release);
+            //  - database is down   -> nothing happens now; the reconciler handles the RESERVING row.
+            // Either way the client can retry with the same Idempotency-Key and gets the true outcome.
             safeFail(orderId, "SAVE_FAILED");
             throw new OrderNotCompletedException(e);
         }

@@ -13,8 +13,11 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 /**
- * Self-healing jobs. All of them use the same conditional transitions as the request path, so they
- * can run on several instances at once, and racing a slow request is harmless (one side wins).
+ * Self-healing jobs. They use the same conditional transitions as the request path, so they can run
+ * on several instances at once. Racing a slow request is safe because exactly one side's conditional
+ * update succeeds AND side effects (outbox event, stock release) are written only by that side, in
+ * the same transaction. Example: if the reconciler sees an attempt as RESERVING but TX2 commits first,
+ * the reconciler's update matches 0 rows and it queues nothing; the order stays PENDING with its stock.
  */
 @Component
 public class OrderMaintenanceJobs {
@@ -40,8 +43,11 @@ public class OrderMaintenanceJobs {
             List<UUID> stuck = orders.findIdsByStatusCreatedBefore(OrderStatus.RESERVING,
                     clock.instant().minus(props.stuckReservationAfter()), 100);
             for (UUID id : stuck) {
-                tx.failAttempt(id, "STUCK", true);
-                log.warn("Order attempt {} was stuck in RESERVING; marked FAILED and its stock release queued", id);
+                if (tx.failAttempt(id, "STUCK", true)) {
+                    log.warn("Order attempt {} was stuck in RESERVING; marked FAILED and its stock release queued", id);
+                } else {
+                    log.info("Order attempt {} completed (or was failed) while being reconciled; left unchanged", id);
+                }
             }
         });
     }

@@ -50,6 +50,15 @@ steps are made durable one at a time:
    row in the outbox, in one transaction. The update only applies
    `WHERE status = 'RESERVING'`.
 
+If anything fails after TX1, the attempt is marked `FAILED` and its stock
+release queued, **but only if it is still `RESERVING`** (same conditional
+update, same transaction). This matters for an **ambiguous commit**: TX2 may
+have committed even though the request saw an error (for example, the
+connection dropped while the commit was being acknowledged). The order then
+exists and is `PENDING`, so it must not be failed or released. The customer
+gets a 503 saying the order could not be confirmed, and retrying with the same
+`Idempotency-Key` returns the order if it went through.
+
 The customer's cart is emptied by cart-service when it receives `OrderPlaced`,
 not by order-service. So the cart is cleared *because* the order exists.
 
@@ -118,7 +127,21 @@ then dead-lettered (`<queue>.dlq`). It is never retried forever.
   - completed stock releases after 30 days. Pending ones are never deleted.
 
 All jobs use the same conditional transitions as requests, so they are safe to
-run on several instances and to race a slow request (exactly one side wins).
+run on several instances and to race a slow request. That needs two things,
+not one:
+
+- exactly one side's conditional update succeeds (`... WHERE status =
+  'RESERVING'`), **and**
+- side effects (the outbox event, the stock release) are written **only by the
+  side whose update succeeded**, in the same transaction. A side whose update
+  matched 0 rows must change nothing at all.
+
+The first version of this service missed the second point: failing an attempt
+queued its stock release even when the update matched 0 rows. If the
+reconciler read an attempt as `RESERVING` and the slow request then committed
+TX2, the reconciler would release the stock of a live `PENDING` order. The
+same happened after an ambiguous commit (below). Both are now fixed and
+covered by tests, including a test that races TX2 against the reconciler.
 
 ## Failure cases
 
@@ -130,6 +153,8 @@ run on several instances and to race a slow request (exactly one side wins).
 | **Stock gone mid-order** (sold out, or a concurrent checkout got the last units) | The catalog's all-or-nothing reservation fails; nothing is reserved; attempt `FAILED` | 409 listing each short product and how many are available; cart unchanged |
 | Price changed since added to cart | The catalog's current price is used | 201; the line is flagged `priceChanged` |
 | order-service crashes, or its database fails, between reserving and TX2 | The order stays `RESERVING`; the reconciler marks it `FAILED` and releases the stock. A late TX2 cannot win (conditional on `RESERVING`). | 503 or a dropped connection; no stock leaks |
+| The reconciler races a slow request: it reads the attempt as `RESERVING`, then the request commits TX2 | The reconciler's update matches 0 rows, so it changes nothing and **queues no release**. The order stays `PENDING` with its stock. | 201, as normal |
+| **Ambiguous commit:** TX2 committed, but the request saw an error | The cleanup's update matches 0 rows (the order is `PENDING`), so nothing is failed or released. The order stands and the event is in the outbox. | 503 "could not confirm"; a retry with the same key returns the order (200) |
 | RabbitMQ down or refusing after the order was saved | The event waits in the outbox; the relay retries until the broker confirms | 201 at once; payment starts and the cart empties once the event is out |
 | **"Cart cleared but event not sent"** | **Cannot happen:** the cart is cleared *by* the event, and the event exists only if the order was committed. The reverse (an event for an order that was not saved) cannot happen either: same transaction. | |
 | **Duplicate events** (relay retry after a crash, broker redelivery) | Same `eventId`, so the duplicate is skipped; the state guards also hold | |

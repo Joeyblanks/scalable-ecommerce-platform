@@ -1,8 +1,13 @@
 package io.github.joeyblanks.ecommerce.order.order;
 
-/** The attempt was given up after stock was reserved (storage failure or the reconciler); stock is released. */
+/**
+ * The outcome of the attempt could not be confirmed (a storage error while saving, possibly after the
+ * save succeeded, or the reconciler gave up on it). Retrying with the same Idempotency-Key returns the
+ * order if it did go through; otherwise the attempt failed and its stock is being returned.
+ */
 public class OrderNotCompletedException extends RuntimeException {
     public OrderNotCompletedException(Throwable cause) {
-        super("The order could not be completed. Nothing was ordered and any reserved stock is being returned; please try again.", cause);
+        super("We could not confirm your order. Please retry with the same Idempotency-Key: if the order went "
+                + "through you will get it back, otherwise nothing was ordered and any reserved stock is returned.", cause);
     }
 }

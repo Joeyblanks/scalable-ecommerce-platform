@@ -103,6 +103,13 @@ class OrderSagaIT {
     @Autowired RabbitAdmin admin;
     @Autowired RetentionCleanupJob cleanup;
     @Autowired io.github.joeyblanks.ecommerce.order.client.ServiceTokenClient tokens;
+    @Autowired io.github.joeyblanks.ecommerce.order.order.OrderTransactions transactions;
+    @Autowired io.github.joeyblanks.ecommerce.order.order.OrderRepository orderRepository;
+    @Autowired io.github.joeyblanks.ecommerce.order.outbox.OutboxRepository outboxRepository;
+    @Autowired io.github.joeyblanks.ecommerce.order.order.StockReleaseRepository stockReleaseRepository;
+    @Autowired io.github.joeyblanks.ecommerce.order.client.CartClient cartClient;
+    @Autowired io.github.joeyblanks.ecommerce.order.client.CatalogClient catalogClient;
+    @Autowired java.time.Clock clock;
     final JsonMapper json = JsonMapper.builder().build();
 
     @BeforeEach
@@ -381,6 +388,123 @@ class OrderSagaIT {
         assertThat(orderStatus(orderId)).as("healthy orders are untouched").isEqualTo("PENDING");
         // a fresh attempt is not touched by the reconciler
         assertThat(count("SELECT count(*) FROM orders WHERE status = 'RESERVING'")).isZero();
+    }
+
+    // =====================================================================================
+    // a failed-attempt cleanup must never release stock of a LIVE order
+    // =====================================================================================
+
+    /**
+     * The reconciler reads the attempt while it is still RESERVING; before it writes, the slow request
+     * finishes TX2 and the order becomes PENDING. The reconciler's failAttempt then runs on a PENDING
+     * order. It must change nothing: no FAILED, and above all no stock release for a live order.
+     */
+    @Test
+    void aReconcilerThatSawTheAttemptBeforeTx2CommittedDoesNotReleaseTheLiveOrder() throws Exception {
+        UUID user = UUID.randomUUID();
+        var book = STUB.product("BOOK", "10.00", 5);
+        STUB.cartLine(user, book, 2, "10.00");
+        UUID orderId = placeOk(user);                     // TX2 committed: PENDING, 2 units reserved
+        assertThat(STUB.stock(book.id())).isEqualTo(3);
+
+        transactions.failAttempt(orderId, "STUCK", true); // the reconciler's write, based on its stale read
+
+        assertThat(orderStatus(orderId)).isEqualTo("PENDING");
+        assertThat(count("SELECT count(*) FROM stock_releases WHERE order_id = ?", orderId))
+                .as("no release may be queued for a live order").isZero();
+        Thread.sleep(1500); // give the release worker (every 100 ms) every chance to act
+        assertThat(STUB.releaseCalls(orderId)).isZero();
+        assertThat(STUB.stock(book.id())).as("the live order keeps its stock").isEqualTo(3);
+    }
+
+    /**
+     * The same race for real: on 20 fresh attempts, TX2 (completePlacement) and the reconciler's
+     * failAttempt start at the same instant. Whichever wins, the outcome must be consistent:
+     * PENDING never has a release queued, FAILED always does.
+     */
+    @Test
+    void tx2RacingTheReconcilerAlwaysEndsConsistent() throws Exception {
+        UUID user = UUID.randomUUID();
+        var book = STUB.product("BOOK", "10.00", 1000);
+        var reservation = new io.github.joeyblanks.ecommerce.order.client.CatalogClient.Reservation(List.of(
+                new io.github.joeyblanks.ecommerce.order.client.CatalogClient.Item(book.id(), "BOOK", "Book",
+                        new java.math.BigDecimal("10.00"), 1, new java.math.BigDecimal("10.00"))));
+        var cartItems = List.of(new io.github.joeyblanks.ecommerce.order.client.CartClient.Item(
+                book.id(), "BOOK", "Book", new java.math.BigDecimal("10.00"), 1));
+        int pendingWins = 0;
+        int failedWins = 0;
+        for (int round = 0; round < 20; round++) {
+            UUID orderId = UUID.randomUUID();
+            transactions.createAttempt(orderId, user, "race-" + round);
+            runConcurrently(2, i -> {
+                if (i == 0) {
+                    transactions.completePlacement(orderId, reservation, cartItems);
+                } else {
+                    transactions.failAttempt(orderId, "STUCK", true);
+                }
+            });
+            String finalStatus = orderStatus(orderId);
+            int releases = count("SELECT count(*) FROM stock_releases WHERE order_id = ?", orderId);
+            if ("PENDING".equals(finalStatus)) {
+                pendingWins++;
+                assertThat(releases).as("round %d: PENDING order must not have a release queued", round).isZero();
+            } else {
+                failedWins++;
+                assertThat(finalStatus).isEqualTo("FAILED");
+                assertThat(releases).as("round %d: FAILED attempt must have its release queued", round).isEqualTo(1);
+            }
+        }
+        System.out.println("race outcomes: PENDING won " + pendingWins + ", FAILED won " + failedWins);
+        assertThat(pendingWins).as("the race really was exercised in the PENDING direction").isPositive();
+    }
+
+    /**
+     * Ambiguous commit: TX2 commits, but the caller gets an exception (e.g. the connection dropped
+     * while the commit was being acknowledged), so safeFail runs. The order really exists and is
+     * PENDING: it must stay PENDING with its stock, and a retry with the same key must return it.
+     */
+    @Test
+    void anAmbiguousCommitOfTx2NeverReleasesTheOrderThatActuallyExists() throws Exception {
+        UUID user = UUID.randomUUID();
+        var book = STUB.product("BOOK", "10.00", 5);
+        STUB.cartLine(user, book, 2, "10.00");
+        var real = transactions;
+        var commitsThenThrows = new io.github.joeyblanks.ecommerce.order.order.OrderTransactions(
+                orderRepository, outboxRepository, stockReleaseRepository, clock) {
+            @Override
+            public void createAttempt(UUID orderId, UUID userId, String key) {
+                real.createAttempt(orderId, userId, key);
+            }
+
+            @Override
+            public java.util.Optional<io.github.joeyblanks.ecommerce.order.order.Order> completePlacement(UUID orderId,
+                    io.github.joeyblanks.ecommerce.order.client.CatalogClient.Reservation r,
+                    List<io.github.joeyblanks.ecommerce.order.client.CartClient.Item> cart) {
+                real.completePlacement(orderId, r, cart); // COMMITTED
+                throw new org.springframework.dao.DataAccessResourceFailureException("connection reset while committing");
+            }
+
+            @Override
+            public boolean failAttempt(UUID orderId, String reason, boolean releaseStock) {
+                return real.failAttempt(orderId, reason, releaseStock);
+            }
+        };
+        var placement = new io.github.joeyblanks.ecommerce.order.order.OrderPlacementService(
+                orderRepository, commitsThenThrows, cartClient, catalogClient);
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> placement.place(user, JWKS.userToken(user.toString(), "CUSTOMER"), "ambiguous"))
+                .isInstanceOf(io.github.joeyblanks.ecommerce.order.order.OrderNotCompletedException.class);
+
+        UUID orderId = jdbc.queryForObject("SELECT id FROM orders WHERE user_id = ?", UUID.class, user);
+        assertThat(orderStatus(orderId)).isEqualTo("PENDING");
+        assertThat(count("SELECT count(*) FROM stock_releases WHERE order_id = ?", orderId)).isZero();
+        assertThat(count("SELECT count(*) FROM outbox_events WHERE aggregate_id = ? AND event_type = 'OrderPlaced'", orderId)).isEqualTo(1);
+        Thread.sleep(1500);
+        assertThat(STUB.releaseCalls(orderId)).isZero();
+        assertThat(STUB.stock(book.id())).isEqualTo(3);
+        // the customer retries with the same key and gets the order that did go through
+        place(user, "ambiguous").andExpect(status().isOk()).andExpect(jsonPath("$.id").value(orderId.toString()))
+                .andExpect(jsonPath("$.status").value("PENDING"));
     }
 
     // =====================================================================================
