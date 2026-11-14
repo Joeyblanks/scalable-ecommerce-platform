@@ -22,11 +22,12 @@ root build. Each service is built, tested and deployed on its own.
 ```
 .
 ├── docs/decisions/      # Architecture Decision Records (ADRs)
-├── user-service/        # Registration, login (JWT), profile
+├── user-service/        # Registration, login (RS256 JWT + JWKS), profile, roles
 │   ├── pom.xml          # standalone (Spring Boot 4.1.x parent, Java 21)
 │   ├── mvnw, .mvn/      # the service's own Maven wrapper
 │   ├── Dockerfile
 │   └── src/
+├── product-catalog-service/   # Products and categories (same standalone layout)
 ├── docker-compose.yml   # local dev: databases + all services
 └── .env.example
 ```
@@ -47,13 +48,13 @@ Prerequisites: JDK 21 and Docker with Compose. Maven is not required: each servi
 
 ```bash
 cp .env.example .env              # then set JWT_PRIVATE_KEY (see "Signing key") and the DB password
-docker compose up --build         # PostgreSQL + user-service on http://localhost:8080
+docker compose up --build         # user-service :8080, product-catalog-service :8081, one PostgreSQL each
 ```
 
 Build and test a single service from its own folder:
 
 ```bash
-cd user-service
+cd user-service                   # or product-catalog-service
 ./mvnw verify                     # unit tests + integration tests (needs Docker)
 ```
 
@@ -112,6 +113,34 @@ TOKEN=$(curl -s -H 'Content-Type: application/json' -d '{"email":"ann@example.co
 curl -H "Authorization: Bearer $TOKEN" localhost:8080/api/users/me
 ```
 
+### Product Catalog Service API (port 8081)
+
+Reads are public. Writes need a Bearer token from user-service with the `ADMIN` role
+(no token -> 401, `CUSTOMER` token -> 403). The service verifies tokens with user-service's JWKS and
+holds no secret.
+
+| Method | Path | Access | Description |
+|--------|------|--------|-------------|
+| GET | `/api/products` | public | Paged list. Params: `page` (>= 0), `size` (1-100, default 20), `sort` (`name`, `price`, `sku`, `stockQuantity`, `createdAt`; e.g. `price,desc`), `categoryId`, `q` (name contains, case-insensitive) |
+| GET | `/api/products/{id}` | public | One product |
+| POST / PUT / DELETE | `/api/products[/{id}]` | ADMIN | Create (201), full update, delete (204). Body: `sku`, `name`, `description`, `price`, `stockQuantity`, `categoryId` |
+| GET | `/api/categories`, `/api/categories/{id}` | public | Paged list (`sort`: `name`, `createdAt`) / one category |
+| POST / PUT / DELETE | `/api/categories[/{id}]` | ADMIN | Body: `name`, `description` |
+
+Lists are `{items, page, size, totalElements, totalPages}`. Errors are RFC 9457 problem JSON:
+400 validation (including a `categoryId` that does not exist), 404 unknown id, 409 duplicate SKU or
+category name, or deleting a category that still has products. SKUs are stored uppercase.
+
+Try it (after setting `BOOTSTRAP_ADMIN_*` in `.env`):
+
+```bash
+TOKEN=$(curl -s -H 'Content-Type: application/json' -d '{"email":"admin@example.com","password":"<your admin password>"}' localhost:8080/api/users/login | jq -r .accessToken)
+CAT=$(curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d '{"name":"Books"}' localhost:8081/api/categories | jq -r .id)
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"sku\":\"CC-1\",\"name\":\"Clean Code\",\"price\":29.90,\"stockQuantity\":10,\"categoryId\":\"$CAT\"}" localhost:8081/api/products
+curl -s 'localhost:8081/api/products?sort=price,desc&size=5'   # public, no token
+```
+
 ## Status
 
-Early stage: project skeleton and User Service MVP.
+Early stage: User Service and Product Catalog Service MVPs.
