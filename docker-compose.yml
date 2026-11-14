@@ -67,6 +67,37 @@ services:
     ports:
       - "8081:8081"
 
+  # Redis is internal to the compose network on purpose: no host port, so nothing unauthenticated is
+  # exposed on your machine and nothing can clash with other local containers.
+  # Inspect it with: docker compose exec cart-redis redis-cli
+  cart-redis:
+    image: redis:8-alpine
+    # Append-only file + volume so carts survive a restart in dev. Losing carts would be tolerable.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - cart-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  cart-service:
+    build:
+      context: ./cart-service
+    # Needs only Redis to start. The catalog and the JWKS (user-service) are called lazily.
+    depends_on:
+      cart-redis:
+        condition: service_healthy
+    environment:
+      REDIS_HOST: cart-redis
+      CATALOG_BASE_URL: http://product-catalog-service:8081
+      JWT_JWK_SET_URI: http://user-service:8080/.well-known/jwks.json
+      JWT_ISSUER: user-service
+    ports:
+      - "8082:8082"
+
 volumes:
   user-db-data:
   catalog-db-data:
+  cart-redis-data:

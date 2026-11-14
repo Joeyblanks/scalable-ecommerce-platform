@@ -32,6 +32,7 @@ root build. Each service is built, tested and deployed on its own.
 │   ├── Dockerfile
 │   └── src/
 ├── product-catalog-service/   # Products and categories (same standalone layout)
+├── cart-service/        # One shopping cart per user, stored in Redis (same standalone layout)
 ├── docker-compose.yml   # local dev: databases + all services
 ├── .github/workflows/   # CI (see "Continuous integration")
 └── .env.example
@@ -47,6 +48,7 @@ matching entry in `docker-compose.yml`.
 - [003 - Spring Security JWT instead of jjwt](docs/decisions/003-spring-security-jwt-over-jjwt.md)
 - [004 - RS256 with JWKS instead of a shared HS256 secret](docs/decisions/004-rs256-jwks-and-roles.md)
 - [005 - CI with one GitHub Actions workflow](docs/decisions/005-ci-github-actions.md)
+- [006 - Cart service: Redis, price snapshots, compare-and-set](docs/decisions/006-cart-service-redis-and-price-snapshots.md)
 
 ## Getting started
 
@@ -54,7 +56,7 @@ Prerequisites: JDK 21 and Docker with Compose. Maven is not required: each servi
 
 ```bash
 cp .env.example .env              # then set JWT_PRIVATE_KEY (see "Signing key") and the DB password
-docker compose up --build         # user-service :8080, product-catalog-service :8081, one PostgreSQL each
+docker compose up --build         # user-service :8080, product-catalog-service :8081, cart-service :8082 (PostgreSQL / Redis behind each)
 ```
 
 Build and test a single service from its own folder:
@@ -156,6 +158,39 @@ curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
 curl -s 'localhost:8081/api/products?sort=price,desc&size=5'   # public, no token
 ```
 
+### Cart Service API (port 8082)
+
+One cart per user, stored in Redis. **Every endpoint needs a Bearer token** from user-service (any
+role). The cart is chosen by the token's subject, never by anything in the request, so users can only
+reach their own cart. Inactive carts expire after 7 days (any access renews the timer).
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/cart` | The cart: `items`, `itemCount`, `totalQuantity`, `total`. Empty cart = 200 with no items. Works even if the catalog is down. |
+| POST | `/api/cart/items` | `{productId, quantity}`: **adds** to the existing line (or creates it). Returns the cart. |
+| PUT | `/api/cart/items/{productId}` | `{quantity}`: **sets** the quantity (1-99). 404 if the line is not in the cart. |
+| DELETE | `/api/cart/items/{productId}` | Removes the line, returns the cart. 404 if not in the cart. |
+| DELETE | `/api/cart` | Clears the cart (204, idempotent) |
+
+On add and quantity change the service asks product-catalog-service (1 s connect / 2 s read timeout).
+Errors are RFC 9457 problem JSON: **404** unknown product or line, **409** not enough stock (includes
+`availableStock`; counts what is already in the cart), too many of one product (99) or too many
+different products (50), **400** invalid input, **503** with `Retry-After` when the catalog or Redis is
+unavailable (the cart is left unchanged).
+
+Prices in the cart are a **snapshot** taken when a line was last added or changed (see
+[ADR 006](docs/decisions/006-cart-service-redis-and-price-snapshots.md)); checkout must re-read the
+catalog price.
+
+```bash
+# TOKEN: log in as any user (see the User Service API above); CAT_PRODUCT_ID: an id from the catalog
+curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"productId\":\"$CAT_PRODUCT_ID\",\"quantity\":2}" localhost:8082/api/cart/items
+curl -s -H "Authorization: Bearer $TOKEN" localhost:8082/api/cart
+```
+
+Redis is not published to the host. To look inside it: `docker compose exec cart-redis redis-cli`.
+
 ## Status
 
-Early stage: User Service and Product Catalog Service MVPs.
+Early stage: User, Product Catalog and Cart service MVPs.
