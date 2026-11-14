@@ -17,8 +17,7 @@ services:
 
   user-service:
     build:
-      context: .
-      dockerfile: services/user-service/Dockerfile
+      context: ./user-service
     depends_on:
       user-db:
         condition: service_healthy

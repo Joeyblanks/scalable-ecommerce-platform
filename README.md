@@ -8,21 +8,31 @@ An e-commerce platform built as a set of Java 21 / Spring Boot microservices in 
 |----------------|-----------------------------------------|
 | Language       | Java 21                                 |
 | Framework      | Spring Boot 4.1 (Spring Security 7, Jackson 3) |
-| Build          | Maven (multi-module)                    |
+| Build          | Maven, one standalone project per service (each with its own wrapper) |
 | Database       | PostgreSQL, one database per service    |
 | Messaging      | RabbitMQ (domain events between services) |
 | Local runtime  | Docker Compose                          |
 
 ## Repository layout
 
+One repository, but every service is a fully independent project: it has its own
+`pom.xml`, Maven wrapper, Dockerfile and tests, and there is no shared parent POM or
+root build. Each service is built, tested and deployed on its own.
+
 ```
 .
-├── docs/decisions/   # Architecture Decision Records (ADRs)
-├── services/         # One Maven module per microservice
-│   └── user-service/ # Registration, login (JWT), profile
-├── docker-compose.yml
-└── pom.xml           # Parent POM (Spring Boot 4.1.x, Java 21)
+├── docs/decisions/      # Architecture Decision Records (ADRs)
+├── user-service/        # Registration, login (JWT), profile
+│   ├── pom.xml          # standalone (Spring Boot 4.1.x parent, Java 21)
+│   ├── mvnw, .mvn/      # the service's own Maven wrapper
+│   ├── Dockerfile
+│   └── src/
+├── docker-compose.yml   # local dev: databases + all services
+└── .env.example
 ```
+
+Adding a service means adding a new top-level folder like `user-service/` and a
+matching entry in `docker-compose.yml`.
 
 ## Architecture decisions
 
@@ -32,12 +42,18 @@ An e-commerce platform built as a set of Java 21 / Spring Boot microservices in 
 
 ## Getting started
 
-Prerequisites: JDK 21 and Docker with Compose. Maven is not required: use the bundled wrapper (`./mvnw`).
+Prerequisites: JDK 21 and Docker with Compose. Maven is not required: each service bundles its own wrapper (`./mvnw`).
 
 ```bash
-cp .env.example .env          # then set JWT_SECRET (min 32 chars) and DB password
-./mvnw verify                 # build + unit tests + integration tests (needs Docker)
-docker compose up --build     # PostgreSQL + user-service on http://localhost:8080
+cp .env.example .env              # then set JWT_SECRET (min 32 chars) and DB password
+docker compose up --build         # PostgreSQL + user-service on http://localhost:8080
+```
+
+Build and test a single service from its own folder:
+
+```bash
+cd user-service
+./mvnw verify                     # unit tests + integration tests (needs Docker)
 ```
 
 ### Tests
