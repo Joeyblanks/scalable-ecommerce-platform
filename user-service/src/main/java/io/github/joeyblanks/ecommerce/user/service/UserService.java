@@ -2,6 +2,7 @@ package io.github.joeyblanks.ecommerce.user.service;
 
 import io.github.joeyblanks.ecommerce.user.dto.LoginRequest;
 import io.github.joeyblanks.ecommerce.user.dto.ContactResponse;
+import io.github.joeyblanks.ecommerce.user.ratelimit.LoginThrottle;
 import io.github.joeyblanks.ecommerce.user.dto.ProfileResponse;
 import io.github.joeyblanks.ecommerce.user.dto.RegisterRequest;
 import io.github.joeyblanks.ecommerce.user.dto.TokenResponse;
@@ -24,14 +25,17 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
     private final Clock clock;
+    private final LoginThrottle loginThrottle;
     /** Compared against when the email is unknown, so unknown/known emails take similar time. */
     private final String dummyHash;
 
-    public UserService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService, Clock clock) {
+    public UserService(UserRepository users, PasswordEncoder passwordEncoder, JwtService jwtService, Clock clock,
+                       LoginThrottle loginThrottle) {
         this.users = users;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
         this.clock = clock;
+        this.loginThrottle = loginThrottle;
         this.dummyHash = passwordEncoder.encode("not-a-real-password");
     }
 
@@ -75,14 +79,20 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public TokenResponse login(LoginRequest request) {
-        User user = users.findByEmail(normalize(request.email())).orElse(null);
+        String email = normalize(request.email());
+        // Before any lookup or hashing, and for unknown emails too, so the answer reveals nothing about accounts.
+        loginThrottle.check(email);
+        User user = users.findByEmail(email).orElse(null);
         if (user == null) {
             passwordEncoder.matches(request.password(), dummyHash);
+            loginThrottle.recordFailure(email);
             throw new InvalidCredentialsException();
         }
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            loginThrottle.recordFailure(email);
             throw new InvalidCredentialsException();
         }
+        loginThrottle.recordSuccess(email);
         return jwtService.issueToken(user);
     }
 

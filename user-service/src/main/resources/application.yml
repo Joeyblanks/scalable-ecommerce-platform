@@ -37,6 +37,19 @@ app:
         scopes: [users:read-contact]
         audience: user-service
 
+  rate-limits:
+    # Limits only user-service can enforce (ADR 011). In memory, per instance. Per-IP limits on login and
+    # register are in the gateway.
+    max-tracked-keys: 10000
+    login:
+      max-failures: 10        # failed logins per account (normalized email) ...
+      window: PT15M           # ... within this window block that account's logins until the oldest expires
+    token:
+      max-failures-per-address: 10   # failed token requests per caller address ...
+      failure-window: PT1M
+      max-per-client: 30             # successful token requests per client id (tokens live 5 min and are cached)
+      client-window: PT1M
+
 management:
   endpoints:
     web:

@@ -9,7 +9,10 @@ import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import io.github.joeyblanks.ecommerce.user.ratelimit.TokenEndpointLimits;
+import io.github.joeyblanks.ecommerce.user.ratelimit.TokenEndpointRateLimitFilter;
 import org.springframework.context.annotation.Bean;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
@@ -55,8 +58,10 @@ public class ServiceTokenConfig {
 
     @Bean
     @Order(1) // evaluated before the customer chain, but only for the token endpoint
-    public SecurityFilterChain serviceTokenEndpointChain(HttpSecurity http) {
+    public SecurityFilterChain serviceTokenEndpointChain(HttpSecurity http, TokenEndpointLimits limits) {
         http
+                // First in the chain: a blocked caller costs no password hashing (ADR 011).
+                .addFilterBefore(new TokenEndpointRateLimitFilter(limits), SecurityContextHolderFilter.class)
                 .securityMatcher(TOKEN_ENDPOINT)
                 .oauth2AuthorizationServer(Customizer.withDefaults())
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
