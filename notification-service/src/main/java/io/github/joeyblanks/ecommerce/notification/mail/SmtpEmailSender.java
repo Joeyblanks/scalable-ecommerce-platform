@@ -8,6 +8,7 @@ import jakarta.mail.internet.MimeBodyPart;
 import java.nio.charset.StandardCharsets;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSenderImpl;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,9 @@ import org.springframework.stereotype.Component;
  * multipart/alternative (plain text + HTML) with a stable Message-ID.
  */
 @Component
+// Exactly one sender is active: this one unless SendGrid is selected (see SendGridEmailSender).
+@ConditionalOnExpression("!('${app.email.provider:auto}' == 'sendgrid' or "
+        + "('${app.email.provider:auto}' == 'auto' and !'${app.sendgrid.api-key:}'.isBlank()))")
 public class SmtpEmailSender implements EmailSender {
 
     private static final Logger log = LoggerFactory.getLogger(SmtpEmailSender.class);

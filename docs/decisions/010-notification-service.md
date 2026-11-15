@@ -86,8 +86,8 @@ Docker Compose: a local mail catcher that accepts every message and shows it at 
 demo needs no account and sends nothing to the outside world. Each email is `multipart/alternative` (plain text
 and HTML).
 
-An optional **SendGrid** sender, used only when `SENDGRID_API_KEY` is set (keys are never committed), is the next
-PR, built like the Stripe provider in ADR 009.
+An optional **SendGrid** sender is used only when `SENDGRID_API_KEY` is set (keys are never committed); see the
+amendment at the end.
 
 ### 6. The emails
 
@@ -141,7 +141,7 @@ Negative:
   yet, nor to replay dead letters.
 - One language, no per-user preferences or unsubscribe yet.
 
-Not done yet: the SendGrid sender, templates per language, a resend tool, and email preferences.
+Not done yet: templates per language, a resend tool, and email preferences.
 
 ## How each protection was proven
 
@@ -174,3 +174,39 @@ guard had no test), which were fixed and the mutations re-run. Honest limits: th
 lost" test documents the accepted duplicate rather than preventing it (section 3); SMTP is tested against Mailpit,
 a real SMTP server, but not against a provider that rejects recipients; user-service is played by a stub that
 speaks its wire format, and the real endpoint is covered by user-service's own tests (ADR 008, amendment).
+
+## Amendment (2026-11-15): the SendGrid sender
+
+`SendGridEmailSender` is the second implementation of `EmailSender`.
+
+- **Selection.** `EMAIL_PROVIDER` is `auto` (default), `smtp` or `sendgrid`. `auto` uses SendGrid when
+  `SENDGRID_API_KEY` is set and SMTP (Mailpit in Compose) otherwise. `smtp` ignores a key; `sendgrid` without a
+  key stops startup. Exactly one sender is active. The key comes only from the environment (compose passes
+  `${SENDGRID_API_KEY:-}` from the gitignored `.env`) and the settings object hides it in `toString`.
+- **Key check.** A key that does not start with `SG.` (or is too short, or has whitespace) stops startup, and the
+  message does not contain it. SendGrid has no separate test-mode keys, so this guard only catches the wrong kind
+  of secret (a Stripe key, a typo), not a live key used by mistake.
+- **Real mail versus sandbox.** Unlike Mailpit and Stripe test mode, a SendGrid key means emails are **really
+  delivered** to customers' addresses. The startup log says so. `SENDGRID_SANDBOX=true` adds SendGrid's
+  `mail_settings.sandbox_mode`, so SendGrid validates every request and delivers nothing; that is the way to try the
+  integration. `MAIL_FROM` must be a sender verified in the SendGrid account.
+- **The call.** One JSON `POST /v3/mail/send` with the plain-text and HTML parts, no SDK, so there are no retries
+  behind our back (a test asserts one request per attempt). Only 202 Accepted (200 in sandbox mode) counts as sent:
+  every other answer, including a redirect or a 204, and any network trouble, throws, and the worker retries
+  with backoff under its lease exactly as for SMTP. Error messages contain the status code only: SendGrid's error body
+  can echo the recipient's address.
+- **Identity of an email.** SendGrid creates the Message-ID itself, so unlike SMTP it cannot be set. Our stable id
+  (derived from the event id) is sent as the `X-Notification-Id` header and as a custom argument, which appear in
+  SendGrid's activity and webhooks. SendGrid has no idempotency key either, so the limit in section 3 is unchanged.
+
+How it was checked, and the limits:
+
+- A local stub speaking the Mail Send API covers the request (key, both parts, our id, sandbox flag), every kind of
+  answer, and unreachable SendGrid. An integration test runs the whole flow with SendGrid selected (event, user
+  lookup, request) and a SendGrid outage that recovers: two 503 answers, then one email accepted, 3 attempts.
+- **Not verified against SendGrid itself**, which needs an account, a key and a verified sender that this repository and
+  CI do not have. The README has a smoke check. To confirm there: that the verified-sender requirement and the
+  sandbox answer (200) behave as documented, and how the `X-Notification-Id` header and custom argument show up.
+- Mutations (each made at least one test fail; source restored identical): key shape (3 tests), authorization header
+  (1), sandbox flag (1), swallowing errors (3), echoing the response body (1), echoing the key (2), both senders active
+  at once (1), our id header (1), HTML part (1), accepting any non-error status (1).

@@ -354,7 +354,7 @@ It has no customer API, only `/actuator/health`.
   user-service (`GET /api/internal/users/{id}/contact`, with its own service token). The address is never
   stored or put in events, and it is always current.
 - **Mail server:** SMTP, by default to **Mailpit**, a local mail catcher in Docker Compose. Nothing is really
-  sent: open **http://localhost:8025** to read the emails. (An optional SendGrid sender is planned.)
+  sent: open **http://localhost:8025** to read the emails. An optional SendGrid sender is described below.
 - **Never twice:** one notification row per event id (unique), a worker lease, and a conditional "sent"
   update. A failed send is retried with backoff (10 attempts or 1 hour), then marked `FAILED` and logged; a
   malformed message goes to the dead-letter queue. Honest limit: SMTP has no idempotency, so if the service
@@ -366,6 +366,20 @@ in `NOTIFICATION_SERVICE_CLIENT_SECRET_HASH` and the plain secret in `NOTIFICATI
 start everything with `docker compose up -d --build`, place an order, and watch the emails arrive in Mailpit:
 order received, then payment confirmed. Place an order whose total ends in `.13` (declined) to get order
 received, then order cancelled with the reason.
+
+**SendGrid (optional).** Put an API key in `.env` and emails go through SendGrid instead of Mailpit:
+
+```bash
+echo 'SENDGRID_API_KEY=SG....' >> .env     # .env is gitignored; never commit a key
+echo 'SENDGRID_SANDBOX=true' >> .env        # SendGrid validates every request but delivers nothing
+docker compose up -d --build notification-service   # the log says: Using the SENDGRID email sender
+```
+
+Without `SENDGRID_SANDBOX=true`, emails are **really delivered** to your customers' addresses, and `MAIL_FROM`
+must be a sender verified in your SendGrid account. Remove the line (or set `EMAIL_PROVIDER=smtp`) to go back to
+Mailpit. A key that does not start with `SG.` stops startup (the message never contains it). Smoke check against
+SendGrid itself: with the sandbox on, place an order and see the notification `SENT` in the notifications table (SendGrid
+accepted the request but delivered nothing); then turn the sandbox off and send to an address of your own.
 
 ## Status
 
