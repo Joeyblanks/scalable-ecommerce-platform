@@ -208,6 +208,63 @@ services:
     ports:
       - "8084:8084"
 
+  notification-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: notificationdb
+      POSTGRES_USER: ${NOTIFICATION_DB_USERNAME:-notification_service}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_service}
+    ports:
+      - "${NOTIFICATION_DB_PORT:-5437}:5432"
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d notificationdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Mail catcher for the demo: accepts every email and shows it in a browser, sends nothing out.
+  # SMTP (1025) stays internal to the compose network; only the web UI is published.
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  notification-service:
+    build:
+      context: ./notification-service
+    # Needs its database, the broker and the mail server to start. user-service is called lazily when an
+    # email is sent: if it is down the email waits and is retried (nothing is lost).
+    depends_on:
+      notification-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://notification-db:5432/notificationdb
+      DB_USERNAME: ${NOTIFICATION_DB_USERNAME:-notification_service}
+      DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_service}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-ecommerce}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-ecommerce}
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      MAIL_FROM: ${MAIL_FROM:-orders@shop.local}
+      USER_SERVICE_BASE_URL: http://user-service:8080
+      SERVICE_TOKEN_URI: http://user-service:8080/oauth2/token
+      # Plain client secret (user-service only holds its bcrypt hash). See README "Service tokens".
+      NOTIFICATION_SERVICE_CLIENT_SECRET: ${NOTIFICATION_SERVICE_CLIENT_SECRET:-}
+    ports:
+      - "8085:8085"
+
 volumes:
   user-db-data:
   catalog-db-data:
@@ -215,3 +272,4 @@ volumes:
   rabbitmq-data:
   order-db-data:
   payment-db-data:
+  notification-db-data:

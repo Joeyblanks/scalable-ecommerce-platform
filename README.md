@@ -35,6 +35,7 @@ root build. Each service is built, tested and deployed on its own.
 ├── cart-service/        # One shopping cart per user, stored in Redis (same standalone layout)
 ├── order-service/       # Orders: saga, transactional outbox, payment events (same standalone layout)
 ├── payment-service/     # Payments: charging via a provider interface, refunds, outbox (same standalone layout)
+├── notification-service/ # Emails for order events via an email sender interface (same standalone layout)
 ├── docs/events/         # Event contracts (envelope, topology, JSON schemas, examples)
 ├── docker-compose.yml   # local dev: databases + all services
 ├── .github/workflows/   # CI (see "Continuous integration")
@@ -55,6 +56,7 @@ matching entry in `docker-compose.yml`.
 - [007 - Order saga with a transactional outbox](docs/decisions/007-order-saga-and-transactional-outbox.md)
 - [008 - Service-to-service tokens (OAuth2 client credentials)](docs/decisions/008-service-to-service-tokens.md)
 - [009 - Payment service: charging exactly once, cancellation races, provider interface](docs/decisions/009-payment-service.md)
+- [010 - Notification service: where the email address comes from, and never emailing twice](docs/decisions/010-notification-service.md)
 
 ## Getting started
 
@@ -342,6 +344,29 @@ idempotency key on every provider call, and conditional state changes. An unknow
 is retried, never treated as a decline. A cancellation that arrives before, during or after the
 charge is honoured: nothing is charged, or the charge is refunded.
 
+### Notification Service (port 8085)
+
+Sends the customer an email for `OrderPlaced` (order received), `OrderPaid` (payment confirmed) and
+`OrderCancelled` (with the reason in plain language) ([ADR 010](docs/decisions/010-notification-service.md)).
+It has no customer API, only `/actuator/health`.
+
+- **Where the address comes from:** events carry only `userId`, so when an email is sent the service asks
+  user-service (`GET /api/internal/users/{id}/contact`, with its own service token). The address is never
+  stored or put in events, and it is always current.
+- **Mail server:** SMTP, by default to **Mailpit**, a local mail catcher in Docker Compose. Nothing is really
+  sent: open **http://localhost:8025** to read the emails. (An optional SendGrid sender is planned.)
+- **Never twice:** one notification row per event id (unique), a worker lease, and a conditional "sent"
+  update. A failed send is retried with backoff (10 attempts or 1 hour), then marked `FAILED` and logged; a
+  malformed message goes to the dead-letter queue. Honest limit: SMTP has no idempotency, so if the service
+  crashes after the mail server accepted a message but before recording it, that one email is sent again (with
+  the same Message-ID). A rare duplicate was chosen over a lost email.
+
+To see it, set the notification client secret in `.env` (see "Service tokens": generate the hash, put the hash
+in `NOTIFICATION_SERVICE_CLIENT_SECRET_HASH` and the plain secret in `NOTIFICATION_SERVICE_CLIENT_SECRET`),
+start everything with `docker compose up -d --build`, place an order, and watch the emails arrive in Mailpit:
+order received, then payment confirmed. Place an order whose total ends in `.13` (declined) to get order
+received, then order cancelled with the reason.
+
 ## Status
 
-Early stage: User, Product Catalog, Cart, Order and Payment service MVPs.
+Early stage: User, Product Catalog, Cart, Order, Payment and Notification service MVPs.

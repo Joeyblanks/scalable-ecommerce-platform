@@ -1,0 +1,70 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: notification-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5437/notificationdb}
+    username: ${DB_USERNAME:notification_service}
+    password: ${DB_PASSWORD:notification_service}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:ecommerce}
+    password: ${RABBITMQ_PASSWORD:ecommerce}
+    listener:
+      simple:
+        # A failing handler is retried with backoff, then dead-lettered (never looped forever).
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 4
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 10s
+  mail:
+    # Default: Mailpit, a local mail catcher (web UI on http://localhost:8025). Nothing leaves the machine.
+    host: ${SMTP_HOST:localhost}
+    port: ${SMTP_PORT:1025}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail.smtp.connectiontimeout: 3000
+      mail.smtp.timeout: 10000
+      mail.smtp.writetimeout: 10000
+
+app:
+  events:
+    exchange: ecommerce.events
+  notifications:
+    from: ${MAIL_FROM:orders@shop.local}
+    lease: PT2M                      # a claimed notification is re-driven by another worker after this (crash recovery)
+    retry-initial-delay: PT1S        # after a failed attempt: 1s, 2s, 4s ... capped below
+    retry-max-delay: PT1M
+    max-attempts: 10                 # ... then FAILED
+    give-up-after: PT1H              # ... or this long since the event, whichever comes first
+    batch-size: 10
+  user-service:
+    # Where the customer's email address comes from (ADR 010), via a service token (ADR 008).
+    base-url: ${USER_SERVICE_BASE_URL:http://localhost:8080}
+    token-uri: ${SERVICE_TOKEN_URI:http://localhost:8080/oauth2/token}
+    client-id: notification-service
+    client-secret: ${NOTIFICATION_SERVICE_CLIENT_SECRET:}
+    scope: users:read-contact
+    connect-timeout: 1s
+    read-timeout: 3s
+  jobs:
+    worker-interval: 500ms
+    cleanup-interval: 1h
+  retention:
+    sent-notifications: P30D         # must outlive any redelivery or dead-letter replay (see ADR 010)
+
+management:
+  health:
+    mail:
+      enabled: false   # a mail catcher/provider outage must not mark the service down: sends are retried
+  endpoints:
+    web:
+      exposure:
+        include: health
