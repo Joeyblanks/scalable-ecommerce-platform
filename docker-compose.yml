@@ -32,6 +32,8 @@ services:
       BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:-}
       # bcrypt hash of order-service's client secret; unset = that client is disabled.
       ORDER_SERVICE_CLIENT_SECRET_HASH: ${ORDER_SERVICE_CLIENT_SECRET_HASH:-}
+      # bcrypt hash of notification-service's client secret (lets it look up a user's email); unset = disabled.
+      NOTIFICATION_SERVICE_CLIENT_SECRET_HASH: ${NOTIFICATION_SERVICE_CLIENT_SECRET_HASH:-}
     ports:
       - "8080:8080"
 

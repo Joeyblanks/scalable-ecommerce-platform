@@ -1,6 +1,7 @@
 package io.github.joeyblanks.ecommerce.user.service;
 
 import io.github.joeyblanks.ecommerce.user.dto.LoginRequest;
+import io.github.joeyblanks.ecommerce.user.dto.ContactResponse;
 import io.github.joeyblanks.ecommerce.user.dto.ProfileResponse;
 import io.github.joeyblanks.ecommerce.user.dto.RegisterRequest;
 import io.github.joeyblanks.ecommerce.user.dto.TokenResponse;
@@ -88,6 +89,13 @@ public class UserService {
     @Transactional(readOnly = true)
     public ProfileResponse getProfile(UUID userId) {
         return users.findById(userId).map(ProfileResponse::from)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+    }
+
+    /** Only what a notification needs: the address and the name. Used by the internal endpoint. */
+    @Transactional(readOnly = true)
+    public ContactResponse getContact(UUID userId) {
+        return users.findById(userId).map(u -> new ContactResponse(u.getId(), u.getEmail(), u.getFullName()))
                 .orElseThrow(() -> new UserNotFoundException(userId));
     }
 

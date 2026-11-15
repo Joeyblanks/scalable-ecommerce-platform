@@ -90,6 +90,30 @@ change.
   could gain a scope claim one day, and test tooling commonly adds `scope` to
   mock tokens. A dedicated `client_id` claim is explicit.
 
+## Amendment (2026-11-15): the first service-called endpoint of user-service
+
+notification-service needs a customer's email address, and events carry only `userId` (ADR 010).
+user-service therefore gets one internal endpoint, `GET /api/internal/users/{id}/contact`, returning
+`userId`, `email` and `fullName` only.
+
+- **Who may call it:** only a service token (it has `client_id`) that carries the scope
+  `users:read-contact` **and** whose `aud` contains `user-service`. All three are checked together
+  (`ServiceTokens.serviceTokenWith`). A customer or admin token has no `client_id`, so it is refused
+  (403) even if someone managed to add a scope and audience claim to it; another service's token has
+  the wrong scope and audience; a token requested without the scope has none (scopes are never implicit).
+  No token or an invalid one is 401.
+- **Client:** `notification-service`, scope `users:read-contact`, audience `user-service`, enabled only when
+  `NOTIFICATION_SERVICE_CLIENT_SECRET_HASH` is set. The path pattern `/api/internal/users/*/contact`
+  admits only that one read; every other path under `/api/internal` falls under the default rule, which
+  refuses service tokens.
+- **Why a dedicated endpoint, not `/api/users/{id}`:** the lookup exposes the least data possible
+  (no role, no hash, no timestamps) and the permission is a single scope, not "may read users".
+- Responses are not cached (Spring Security's default `Cache-Control: no-store`, asserted in a test).
+
+Checked by switching each part off and running the tests: without the scope check, without the audience
+check, without the `client_id` check, and with the endpoint open to any authenticated user, at least one test
+failed each time.
+
 ## Consequences
 
 Positive:
