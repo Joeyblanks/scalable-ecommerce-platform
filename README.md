@@ -317,6 +317,21 @@ amount (for example `19.99` and `20.13`), place an order for each, and follow th
 `GET /api/orders/{id}` and `GET /api/payments/orders/{id}`: the first becomes `PAID`; the second
 becomes `CANCELLED` with its stock back in the catalog.
 
+**Stripe test mode (optional).** Set a Stripe **test** key in `.env` and payment-service charges
+through Stripe's test API instead (no account needed otherwise; this is never required):
+
+```bash
+echo 'STRIPE_API_KEY=sk_test_...' >> .env      # .env is gitignored; a live key (sk_live_) stops startup
+docker compose up -d --build payment-service   # the log says: Using the STRIPE provider in TEST MODE
+```
+
+Orders carry no card details, so the same cents rule picks Stripe's test payment methods
+(`.13` declined, `.14` insufficient funds, anything else `pm_card_visa`). Charges are PaymentIntents
+with `confirm=true`, amounts in cents, and our idempotency key. Remove the line (or set
+`PAYMENT_PROVIDER=simulated`) to go back to the simulated provider. Smoke check against Stripe's real
+test API: place a `19.99` order and see it `PAID` in `GET /api/payments/orders/{id}` and in the
+Stripe dashboard's test-mode payments; then cancel a paid one and see the refund there.
+
 How it never charges twice (details and the failure table are in ADR 009): one payment row per
 order (unique `order_id`), a worker lease so two workers never charge the same payment, a stable
 idempotency key on every provider call, and conditional state changes. An unknown outcome (timeout)

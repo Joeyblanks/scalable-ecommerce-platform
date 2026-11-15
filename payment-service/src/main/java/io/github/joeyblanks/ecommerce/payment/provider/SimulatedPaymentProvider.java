@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -18,6 +19,9 @@ import org.springframework.transaction.support.TransactionTemplate;
  * side. Repeating a charge with the same key therefore returns the original outcome, also across restarts.
  */
 @Component
+// Exactly one provider is active: this one unless Stripe test mode is selected (see StripePaymentProvider).
+@ConditionalOnExpression("!('${app.payments.provider:auto}' == 'stripe' or "
+        + "('${app.payments.provider:auto}' == 'auto' and !'${app.stripe.api-key:}'.isBlank()))")
 public class SimulatedPaymentProvider implements PaymentProvider {
 
     private static final Logger log = LoggerFactory.getLogger(SimulatedPaymentProvider.class);
@@ -31,7 +35,7 @@ public class SimulatedPaymentProvider implements PaymentProvider {
         this.transaction = transaction;
         this.clock = clock;
         log.warn("Using the SIMULATED payment provider: no real money moves. "
-                + "(A real provider is configured in a later version; see ADR 009.)");
+                + "(Set a Stripe TEST key in STRIPE_API_KEY to use Stripe test mode; see ADR 009.)");
     }
 
     @Override

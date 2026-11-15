@@ -38,12 +38,18 @@ app:
   events:
     exchange: ecommerce.events
   payments:
+    # simulated | stripe | auto (default: stripe test mode when STRIPE_API_KEY is set, else simulated)
+    provider: ${PAYMENT_PROVIDER:auto}
     currency: EUR                    # one currency for now
     lease: PT2M                      # a claimed payment is re-driven by another worker after this (crash recovery)
     retry-initial-delay: PT1S        # after a transient provider problem: 1s, 2s, 4s ... capped below
     retry-max-delay: PT1M
     needs-review-after: PT2H         # no definitive provider answer by then: stop retrying, flag NEEDS_REVIEW
     batch-size: 10
+  stripe:
+    # Test keys only (sk_test_/rk_test_): anything else stops startup. Environment only, never committed.
+    api-key: ${STRIPE_API_KEY:}
+    api-base: ${STRIPE_API_BASE:}
   jobs:
     outbox-relay-interval: 500ms
     outbox-batch-size: 50
