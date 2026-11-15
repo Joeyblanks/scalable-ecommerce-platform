@@ -55,6 +55,9 @@ class ServiceTokenIT {
         BCryptPasswordEncoder bcrypt = new BCryptPasswordEncoder(4);
         registry.add("app.jwt.private-key", TestKeys::sharedBase64Pem);
         registry.add("app.jwt.issuer", () -> "user-service");
+        // this class exercises token issuing, not the rate limits (RateLimitIT does): keep them out of the way
+        registry.add("app.rate-limits.token.max-failures-per-address", () -> "100000");
+        registry.add("app.rate-limits.token.max-per-client", () -> "100000");
         registry.add("app.service-tokens.clients[0].client-id", () -> "order-service");
         registry.add("app.service-tokens.clients[0].secret-hash", () -> bcrypt.encode(ORDER_SECRET));
         registry.add("app.service-tokens.clients[0].scopes[0]", () -> "stock:reserve");

@@ -107,6 +107,19 @@ BOOTSTRAP_ADMIN_PASSWORD=<12-72 characters, strong and unique>
 The admin is created once at startup. There is no default password. If the email already
 belongs to an account, that account is left unchanged. You can remove the variables afterwards.
 
+### Rate limits in user-service
+
+([ADR 011](docs/decisions/011-api-gateway-discovery-and-rate-limiting.md); per-IP limits on login and register will be
+added in the gateway.) A blocked request gets **429** with a `Retry-After` header (seconds).
+
+- **Login, per account:** 10 failed logins within 15 minutes block that account's logins (also for the correct password)
+  until the oldest failure is 15 minutes old. Unknown emails are treated the same, so nothing is revealed about accounts.
+  A successful login clears the count. Trade-off: someone who knows an email can keep that account's logins blocked for a
+  while (see the ADR for why this is accepted).
+- **`POST /oauth2/token`:** 10 failed requests per minute per caller address, and 30 successful ones per minute per client
+  id. The address is the real connection address; `X-Forwarded-For` is never trusted.
+- Settings: `app.rate-limits.*` in `application.yml`. Counters are in memory, per instance.
+
 ### Service tokens (service-to-service calls)
 
 Services authenticate to each other with short-lived (5 minute) tokens from user-service, using the

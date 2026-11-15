@@ -136,4 +136,17 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.keys[0].dq").doesNotExist())
                 .andExpect(jsonPath("$.keys[0].qi").doesNotExist());
     }
+
+    @Test
+    void tooManyFailedLoginsIs429WithRetryAfterAndNoDetailsAboutTheAccount() throws Exception {
+        when(userService.login(any())).thenThrow(new io.github.joeyblanks.ecommerce.user.ratelimit.TooManyAttemptsException(
+                "Too many failed login attempts. Try again later.", java.time.Duration.ofSeconds(90)));
+
+        mvc.perform(post("/api/users/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"ann@example.com\",\"password\":\"password123\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.header().string("Retry-After", "90"))
+                .andExpect(jsonPath("$.status").value(429))
+                .andExpect(jsonPath("$.detail").value("Too many failed login attempts. Try again later."));
+    }
 }
