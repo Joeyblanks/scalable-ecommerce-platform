@@ -124,6 +124,10 @@ curl -s -u order-service:<client secret> -d grant_type=client_credentials -d sco
   accepted nowhere.
 - Customer-facing endpoints refuse service tokens (403); internal endpoints refuse user and ADMIN
   tokens (403).
+- **Contact lookup (internal):** `GET /api/internal/users/{id}/contact` returns `userId`, `email` and
+  `fullName` (nothing else). Only a service token with scope `users:read-contact` and audience
+  `user-service` (the `notification-service` client) can call it; customer, admin and other services'
+  tokens get 403, no token 401, an unknown user 404.
 - Clients are configured in `user-service/src/main/resources/application.yml`. user-service stores
   only a **bcrypt hash** of each secret (startup fails if a plain secret is put there). Generate one:
 

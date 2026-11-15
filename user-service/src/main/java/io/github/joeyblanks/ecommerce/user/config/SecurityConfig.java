@@ -27,6 +27,9 @@ public class SecurityConfig {
                         // Customer-facing endpoints refuse service tokens (403), even the public ones.
                         .requestMatchers(HttpMethod.POST, "/api/users/register", "/api/users/login")
                                 .access(ServiceTokens.notAServiceToken())
+                        // Internal: only notification-service's token (scope + audience), see ADR 008.
+                        .requestMatchers(HttpMethod.GET, "/api/internal/users/*/contact")
+                                .access(ServiceTokens.serviceTokenWith("users:read-contact", "user-service"))
                         // Infrastructure, used by services too.
                         .requestMatchers(HttpMethod.GET, "/.well-known/jwks.json").permitAll()
                         .requestMatchers("/actuator/health/**").permitAll()
