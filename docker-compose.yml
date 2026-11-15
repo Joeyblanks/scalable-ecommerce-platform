@@ -163,9 +163,48 @@ services:
     ports:
       - "8083:8083"
 
+  payment-db:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: paymentdb
+      POSTGRES_USER: ${PAYMENT_DB_USERNAME:-payment_service}
+      POSTGRES_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment_service}
+    ports:
+      - "${PAYMENT_DB_PORT:-5436}:5432"
+    volumes:
+      - payment-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d paymentdb"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  payment-service:
+    build:
+      context: ./payment-service
+    # Needs its database and the broker to start. It only verifies customer tokens (JWKS from
+    # user-service, fetched lazily) and never calls another service: it works from events alone.
+    depends_on:
+      payment-db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://payment-db:5432/paymentdb
+      DB_USERNAME: ${PAYMENT_DB_USERNAME:-payment_service}
+      DB_PASSWORD: ${PAYMENT_DB_PASSWORD:-payment_service}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: ${RABBITMQ_USERNAME:-ecommerce}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-ecommerce}
+      JWT_JWK_SET_URI: http://user-service:8080/.well-known/jwks.json
+      JWT_ISSUER: user-service
+    ports:
+      - "8084:8084"
+
 volumes:
   user-db-data:
   catalog-db-data:
   cart-redis-data:
   rabbitmq-data:
   order-db-data:
+  payment-db-data:
