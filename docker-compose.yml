@@ -258,6 +258,12 @@ services:
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
       MAIL_FROM: ${MAIL_FROM:-orders@shop.local}
+      # Empty = SMTP to Mailpit (nothing is really sent). A SendGrid API key switches to SendGrid and emails
+      # are REALLY delivered (unless SENDGRID_SANDBOX=true). Set it in .env only, never commit it.
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_SANDBOX: ${SENDGRID_SANDBOX:-false}
+      # smtp | sendgrid | auto. "smtp" ignores a SendGrid key that happens to be set.
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-auto}
       USER_SERVICE_BASE_URL: http://user-service:8080
       SERVICE_TOKEN_URI: http://user-service:8080/oauth2/token
       # Plain client secret (user-service only holds its bcrypt hash). See README "Service tokens".

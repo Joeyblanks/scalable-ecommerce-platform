@@ -37,6 +37,14 @@ spring:
 app:
   events:
     exchange: ecommerce.events
+  email:
+    # smtp | sendgrid | auto (default: SendGrid when SENDGRID_API_KEY is set, else SMTP, i.e. Mailpit in Compose)
+    provider: ${EMAIL_PROVIDER:auto}
+  sendgrid:
+    # Environment only, never committed. SENDGRID_SANDBOX=true: SendGrid validates but delivers nothing.
+    api-key: ${SENDGRID_API_KEY:}
+    api-base: ${SENDGRID_API_BASE:https://api.sendgrid.com}
+    sandbox: ${SENDGRID_SANDBOX:false}
   notifications:
     from: ${MAIL_FROM:orders@shop.local}
     lease: PT2M                      # a claimed notification is re-driven by another worker after this (crash recovery)

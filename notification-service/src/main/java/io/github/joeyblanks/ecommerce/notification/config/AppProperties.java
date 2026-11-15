@@ -44,6 +44,19 @@ public final class AppProperties {
         }
     }
 
+    /**
+     * SendGrid settings. The key comes only from the environment ({@code SENDGRID_API_KEY}), is never committed and
+     * is hidden by {@code toString}. {@code sandbox}: SendGrid validates the request but delivers nothing.
+     */
+    @ConfigurationProperties(prefix = "app.sendgrid")
+    public record SendGrid(String apiKey, @NotBlank String apiBase, boolean sandbox) {
+        @Override
+        public String toString() {
+            return "SendGrid[apiKey=" + (apiKey == null || apiKey.isBlank() ? "unset" : "***") + ", apiBase=" + apiBase
+                    + ", sandbox=" + sandbox + "]";
+        }
+    }
+
     @Validated
     @ConfigurationProperties(prefix = "app.jobs")
     public record Jobs(@NotNull Duration workerInterval, @NotNull Duration cleanupInterval) {
