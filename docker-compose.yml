@@ -198,6 +198,11 @@ services:
       RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-ecommerce}
       JWT_JWK_SET_URI: http://user-service:8080/.well-known/jwks.json
       JWT_ISSUER: user-service
+      # Empty = the built-in simulated provider. A Stripe TEST key (sk_test_/rk_test_) switches to Stripe
+      # test mode; any other key stops the service from starting. Set it in .env only, never commit it.
+      STRIPE_API_KEY: ${STRIPE_API_KEY:-}
+      # simulated | stripe | auto. "simulated" ignores a Stripe key that happens to be set.
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-auto}
     ports:
       - "8084:8084"
 

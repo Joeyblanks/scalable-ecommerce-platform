@@ -112,10 +112,10 @@ readable in a demo): `.13` is declined (`CARD_DECLINED`), `.14` is declined
 succeeds, anything else succeeds. The service logs a warning at startup that no
 real money moves.
 
-**Stripe test mode (next PR).** Used only when a Stripe *test* key is present in
-the environment; keys are never committed. Real checkout would collect a payment
-method from the customer, which the `OrderPlaced` contract does not carry; that
-is out of scope here.
+**Stripe test mode (added in the second payment PR, see the amendment below).**
+Used only when a Stripe *test* key is present in the environment; keys are never
+committed. Real checkout would collect a payment method from the customer, which
+the `OrderPlaced` contract does not carry; that is out of scope here.
 
 ### 6. Events, queues and cleanup
 
@@ -174,7 +174,7 @@ Negative:
 - The simulated provider cannot show real provider behaviour such as 3-D
   Secure, webhooks or partial refunds; none of these exist in the contracts yet.
 
-Not done yet: the Stripe test-mode provider, a `PaymentRefunded` event,
+Not done yet: a `PaymentRefunded` event,
 multiple currencies, tooling to resolve `NEEDS_REVIEW` payments and to replay
 dead letters.
 
@@ -213,3 +213,47 @@ rather than a visible double effect. The simulated provider ignores the refund
 idempotency key (it refunds a charge at most once by itself), so only the refund
 *lease* is proven at service level. The race tests (`cancel` racing the charge,
 `cancel` racing `OrderPlaced`) run 40 rounds each.
+
+## Amendment (2026-11-15): Stripe test-mode provider
+
+`StripePaymentProvider` (stripe-java 34.1.0, pinned) is the second implementation of the interface.
+
+- **Selection.** `PAYMENT_PROVIDER` is `auto` (default), `simulated` or `stripe`. `auto` uses Stripe
+  when `STRIPE_API_KEY` is set and the simulated provider otherwise. `simulated` ignores a key; `stripe`
+  without a key stops startup. The key comes only from the environment (compose passes `${STRIPE_API_KEY:-}`
+  from the gitignored `.env`) and the settings object hides it in `toString`.
+- **Test keys only.** Anything that is not `sk_test_`/`rk_test_` (live keys, publishable keys) stops the
+  service from starting. The message does not contain the key. This is a hard guard, not a convention: a
+  live key can never reach the SDK.
+- **Calls.** A charge is a PaymentIntent with `confirm=true`, `automatic_payment_methods` with redirects
+  disabled (a charge that needs customer action would be stuck forever), the amount in cents, and our
+  idempotency key `charge-<payment id>`. A refund is a Refund on that PaymentIntent with its own key. The
+  SDK's automatic retries are off (retrying is the worker's job, under its lease and with the same key);
+  timeouts are 3 s connect, 15 s read.
+- **Payment method.** Orders carry no card details, so the cents of the total choose Stripe's documented
+  test payment method, like the simulated rules: `.13` `pm_card_chargeDeclined`, `.14`
+  `pm_card_chargeDeclinedInsufficientFunds`, anything else `pm_card_visa`.
+- **Outcome mapping.** Only a `succeeded` PaymentIntent and a card decline (HTTP 402) are definitive. Every
+  other outcome is Transient and retried with the same key, never recorded as a decline: timeouts, 5xx,
+  429, 401/403/400 (a bad key or request is our problem, not the customer's), an idempotency conflict, an
+  unparsable answer, and a PaymentIntent that is `processing` or `requires_action`. The decline reason is
+  our own stable code (`CARD_DECLINED`, `INSUFFICIENT_FUNDS`), never Stripe's text, which could echo card
+  details. A refund counts once Stripe accepts it (`succeeded` or `pending`).
+
+How it was checked, and the limits:
+
+- A local stub speaking Stripe's wire format covers the mapping above, the request contents (key, amount in
+  cents, test payment method, idempotency header, no SDK retries) and the refusal of live keys.
+- `stripe-mock` (Stripe's own server, validating requests against Stripe's published OpenAPI schema) runs in
+  a Testcontainers test. It always answers with one fixed PaymentIntent that is *not* succeeded, so it proves
+  that our requests are well-formed and the answer is parsed, and (correctly) that such an answer is not
+  treated as money taken. It cannot show real declines or idempotency.
+- **Not verified against Stripe's real test API**, which needs a test key that this repository and CI do not
+  have. The README has a smoke check. Behaviour to confirm there: that `pm_card_visa` succeeds with
+  redirects disabled on the account's settings, the decline codes, and that a replayed idempotency key
+  returns the first result.
+- Mutations (each made at least one test fail; source restored identical): accepting live keys (3 tests),
+  not sending our idempotency key (2), enabling the SDK's own retries (1), treating errors as declines (3),
+  treating any PaymentIntent status as success (1), echoing the key in the refusal message (1).
+- A PaymentIntent left in `requires_action` stays in Stripe; payment-service reports it as unknown and the
+  payment ends `NEEDS_REVIEW`. Zero-decimal currencies are not handled (EUR only for now).

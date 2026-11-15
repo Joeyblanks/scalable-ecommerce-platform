@@ -35,6 +35,20 @@ public final class AppProperties {
                            @NotNull Duration retryMaxDelay, @NotNull Duration needsReviewAfter, @Min(1) int batchSize) {
     }
 
+    /**
+     * Stripe test-mode settings. The key comes only from the environment ({@code STRIPE_API_KEY}); it is
+     * never committed and never printed ({@code toString} hides it).
+     *
+     * @param apiBase override of Stripe's API URL (tests point it at stripe-mock); empty = Stripe
+     */
+    @ConfigurationProperties(prefix = "app.stripe")
+    public record Stripe(String apiKey, String apiBase) {
+        @Override
+        public String toString() {
+            return "Stripe[apiKey=" + (apiKey == null || apiKey.isBlank() ? "unset" : "***") + ", apiBase=" + apiBase + "]";
+        }
+    }
+
     @Validated
     @ConfigurationProperties(prefix = "app.jobs")
     public record Jobs(@NotNull Duration outboxRelayInterval, @Min(1) int outboxBatchSize,
