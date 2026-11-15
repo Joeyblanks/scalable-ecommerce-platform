@@ -1,0 +1,62 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: payment-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5436/paymentdb}
+    username: ${DB_USERNAME:payment_service}
+    password: ${DB_PASSWORD:payment_service}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:ecommerce}
+    password: ${RABBITMQ_PASSWORD:ecommerce}
+    # The outbox relay waits for the broker's confirm before marking an event published, and treats an
+    # unroutable message (mandatory + returns) as a failure, never as success.
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        # A failing order-event handler is retried with backoff, then dead-lettered (never looped forever).
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 4
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 10s
+
+app:
+  security:
+    # Customer tokens are verified against user-service's public keys (ADR 004).
+    jwk-set-uri: ${JWT_JWK_SET_URI:http://localhost:8080/.well-known/jwks.json}
+    issuer: ${JWT_ISSUER:user-service}
+  events:
+    exchange: ecommerce.events
+  payments:
+    currency: EUR                    # one currency for now
+    lease: PT2M                      # a claimed payment is re-driven by another worker after this (crash recovery)
+    retry-initial-delay: PT1S        # after a transient provider problem: 1s, 2s, 4s ... capped below
+    retry-max-delay: PT1M
+    needs-review-after: PT2H         # no definitive provider answer by then: stop retrying, flag NEEDS_REVIEW
+    batch-size: 10
+  jobs:
+    outbox-relay-interval: 500ms
+    outbox-batch-size: 50
+    publish-confirm-timeout: 5s
+    charge-worker-interval: 500ms
+    refund-worker-interval: 1s
+    cleanup-interval: 1h
+  retention:
+    published-outbox-events: P7D     # published events are only kept for troubleshooting
+    processed-events: P30D           # must outlive any redelivery or dead-letter replay (see ADR 009)
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

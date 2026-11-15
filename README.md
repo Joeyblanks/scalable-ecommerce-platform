@@ -34,6 +34,7 @@ root build. Each service is built, tested and deployed on its own.
 ├── product-catalog-service/   # Products and categories (same standalone layout)
 ├── cart-service/        # One shopping cart per user, stored in Redis (same standalone layout)
 ├── order-service/       # Orders: saga, transactional outbox, payment events (same standalone layout)
+├── payment-service/     # Payments: charging via a provider interface, refunds, outbox (same standalone layout)
 ├── docs/events/         # Event contracts (envelope, topology, JSON schemas, examples)
 ├── docker-compose.yml   # local dev: databases + all services
 ├── .github/workflows/   # CI (see "Continuous integration")
@@ -53,6 +54,7 @@ matching entry in `docker-compose.yml`.
 - [006 - Cart service: Redis, price snapshots, compare-and-set](docs/decisions/006-cart-service-redis-and-price-snapshots.md)
 - [007 - Order saga with a transactional outbox](docs/decisions/007-order-saga-and-transactional-outbox.md)
 - [008 - Service-to-service tokens (OAuth2 client credentials)](docs/decisions/008-service-to-service-tokens.md)
+- [009 - Payment service: charging exactly once, cancellation races, provider interface](docs/decisions/009-payment-service.md)
 
 ## Getting started
 
@@ -60,7 +62,7 @@ Prerequisites: JDK 21 and Docker with Compose. Maven is not required: each servi
 
 ```bash
 cp .env.example .env              # then set JWT_PRIVATE_KEY (see "Signing key") and the DB password
-docker compose up --build         # user-service :8080, product-catalog-service :8081, cart-service :8082 (PostgreSQL / Redis behind each)
+docker compose up --build         # user :8080, catalog :8081, cart :8082, order :8083, payment :8084 (PostgreSQL / Redis behind each)
 ```
 
 Build and test a single service from its own folder:
@@ -288,9 +290,39 @@ examples) are in [`docs/events`](docs/events/README.md).
 To place an order locally, order-service needs its client secret: set
 `ORDER_SERVICE_CLIENT_SECRET` and the matching `ORDER_SERVICE_CLIENT_SECRET_HASH` in `.env` (see
 "Service tokens"). The RabbitMQ management UI is at http://localhost:15672. Once an order is placed,
-cart-service removes the ordered items from your cart. Payment and notification services come next;
-until then an order stays `PENDING` and is auto-cancelled after 30 minutes.
+cart-service removes the ordered items from your cart, and payment-service charges it (below).
+
+### Payment Service API (port 8084)
+
+Consumes `OrderPlaced` and `OrderCancelled`, charges through a provider, and publishes
+`PaymentSucceeded` / `PaymentFailed` ([ADR 009](docs/decisions/009-payment-service.md)). It calls no
+other service: it works from events and its own PostgreSQL.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/payments/orders/{orderId}` | The payment status of **your own** order: `PROCESSING`, `PAID`, `FAILED` (with `failureReason`), `CANCELLED`, `REFUNDING` or `REFUNDED`, plus `amount`, `currency`, `updatedAt`. 404 for an unknown order, someone else's order, or an order whose payment is not recorded yet. Service tokens get 403. |
+
+**The simulated provider (default)** needs no account and moves no money. Orders carry no card
+details, so it decides by the **cents of the order total**:
+
+| Total ends in | Result |
+|---|---|
+| anything else | succeeds |
+| `.13` | declined (`CARD_DECLINED`): the order is cancelled and its stock returned |
+| `.14` | declined (`INSUFFICIENT_FUNDS`) |
+| `.15` | two provider errors, then success (shows the retry; charged once) |
+
+To see both outcomes locally, create products priced so the total ends in `.13` and in a normal
+amount (for example `19.99` and `20.13`), place an order for each, and follow them with
+`GET /api/orders/{id}` and `GET /api/payments/orders/{id}`: the first becomes `PAID`; the second
+becomes `CANCELLED` with its stock back in the catalog.
+
+How it never charges twice (details and the failure table are in ADR 009): one payment row per
+order (unique `order_id`), a worker lease so two workers never charge the same payment, a stable
+idempotency key on every provider call, and conditional state changes. An unknown outcome (timeout)
+is retried, never treated as a decline. A cancellation that arrives before, during or after the
+charge is honoured: nothing is charged, or the charge is refunded.
 
 ## Status
 
-Early stage: User, Product Catalog, Cart and Order service MVPs.
+Early stage: User, Product Catalog, Cart, Order and Payment service MVPs.

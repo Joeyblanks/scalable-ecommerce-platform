@@ -10,7 +10,7 @@ tests check against the field lists here. The saga that uses them is described i
 |---|---|---|
 | Exchange | `ecommerce.events` | durable **topic** exchange; every event goes here |
 | Routing key | `<aggregate>.<event>` in lower case | `order.placed`, `order.paid`, `order.cancelled`, `payment.succeeded`, `payment.failed` |
-| Queues | `<consumer-service>.<purpose>` | each consumer declares and owns its queue(s), e.g. `order-service.payment-events` |
+| Queues | `<consumer-service>.<purpose>` | each consumer declares and owns its queue(s): `order-service.payment-events` (`payment.*`), `payment-service.order-events` (`order.placed`, `order.cancelled`) |
 | Dead letters | exchange `ecommerce.events.dlx`, queue `<queue>.dlq` | a message that keeps failing is moved there after a few retries; it is never retried forever |
 
 Declarations are idempotent: every service declares the exchange and the queues it uses at startup.
@@ -81,6 +81,6 @@ Fields: `paymentId`, `orderId`, `amount` (money), `succeededAt`.
 
 ### `PaymentFailed` v1 (payment-service, `payment.failed`)
 Consumers: order-service (PENDING -> CANCELLED, stock released).
-Fields: `paymentId`, `orderId`, `reason` (free text, e.g. `CARD_DECLINED`), `failedAt`.
+Fields: `paymentId`, `orderId`, `reason` (free text; payment-service sends a stable code such as `CARD_DECLINED` or `INSUFFICIENT_FUNDS`, and new codes may be added), `failedAt`.
 
 Machine-readable versions: [`schemas/`](schemas) (JSON Schema 2020-12) and [`examples/`](examples).
